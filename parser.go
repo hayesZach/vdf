@@ -65,22 +65,12 @@ func (p *Parser) parse() (*KeyValue, error) {
 		return nil, err
 	}
 
-	token, err = p.lexer.Next()
+	// Parse the value (should be a sub-object for root)
+	val, err := p.parseObject()
 	if err != nil {
-		return root, err
+		return nil, err
 	}
-
-	if token.Type == LBRACE {
-		// Parse sub key-value
-		if err := p.lexer.unread(); err != nil {
-			return nil, err
-		}
-		val, err := p.parseObject()
-		if err != nil {
-			return nil, err
-		}
-		root.Value = val
-	}
+	root.Value = val
 
 	return root, nil
 }
@@ -209,11 +199,11 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 				value += token.Lexeme
 			}
 		} else {
-			if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE {
+			if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE || token.Type == DOUBLEQUOTE {
 				// Unquoted tokens end with whitespace or any control character
 				break
 			} else if token.Type != IDENTIFIER {
-				return "", fmt.Errorf("invalid token %q for unquoted identifier", token.Type)
+				return "", fmt.Errorf("invalid token type %q for unquoted identifier", token.Type.String())
 			}
 			value += token.Lexeme
 		}
