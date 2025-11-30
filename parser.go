@@ -8,9 +8,7 @@ import (
 )
 
 type Parser struct {
-	lexer *Lexer
-
-	ignoreWhitespace    bool
+	lexer               *Lexer
 	usesEscapeSequences bool
 }
 
@@ -21,7 +19,6 @@ func NewParser(r io.Reader) *Parser {
 func NewParserWithOptions(r io.Reader, ignoreWhitespace bool, usesEscapeSequences bool) *Parser {
 	return &Parser{
 		lexer:               NewLexer(r, ignoreWhitespace),
-		ignoreWhitespace:    ignoreWhitespace,
 		usesEscapeSequences: usesEscapeSequences,
 	}
 }
@@ -29,6 +26,11 @@ func NewParserWithOptions(r io.Reader, ignoreWhitespace bool, usesEscapeSequence
 func Parse(b []byte) (*KeyValue, error) {
 	parser := NewParser(bytes.NewReader(b))
 	return parser.parse()
+}
+
+func (p *Parser) parseStringValue(token *Token) (string, error) {
+	isQuoted := token.Type == DOUBLEQUOTE
+	return p.parseToken(isQuoted)
 }
 
 func (p *Parser) parse() (*KeyValue, error) {
@@ -39,21 +41,15 @@ func (p *Parser) parse() (*KeyValue, error) {
 		return nil, err
 	}
 
-	token, err := p.lexer.Next()
+	token, err := p.lexer.peek()
 	if err != nil {
 		return nil, err
 	}
 
 	if token.Type == EOF {
 		return root, nil
-	} else if token.Type == DOUBLEQUOTE {
-		key, err := p.parseToken(true /* isQuoted*/)
-		if err != nil {
-			return nil, err
-		}
-		root.Key = key
-	} else if token.Type == IDENTIFIER {
-		key, err := p.parseToken(false /* isQuoted */)
+	} else if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
+		key, err := p.parseStringValue(token)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +76,7 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 		return nil, err
 	}
 
-	token, err := p.lexer.Next()
+	token, err := p.lexer.next()
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +92,7 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 			return nil, err
 		}
 
-		token, err = p.lexer.Next()
+		token, err = p.lexer.peek()
 		if err != nil {
 			return nil, err
 		}
@@ -106,21 +102,18 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 		}
 
 		if token.Type == RBRACE {
-			// Finished parsing object
+			// Finished parsing object -- consume the closing brace
+			if _, err := p.lexer.next(); err != nil {
+				return nil, err
+			}
 			break
 		}
 
 		kv := &KeyValue{}
 
 		// Handle quoted and unquoted keys and values
-		if token.Type == IDENTIFIER {
-			key, err := p.parseToken(false /* isQuoted */)
-			if err != nil {
-				return nil, err
-			}
-			kv.Key = key
-		} else if token.Type == DOUBLEQUOTE {
-			key, err := p.parseToken(true /* isQuoted */)
+		if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
+			key, err := p.parseStringValue(token)
 			if err != nil {
 				return nil, err
 			}
@@ -133,44 +126,40 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 		}
 
 		// Handle parsing value
-		token, err = p.lexer.Next()
+		token, err = p.lexer.peek()
 		if err != nil {
 			return nil, err
 		}
 
 		if token.Type == LBRACE {
-			if err := p.lexer.unread(); err != nil {
-				return nil, err
-			}
-
 			val, err := p.parseObject()
 			if err != nil {
 				return nil, err
 			}
 			kv.Value = val
-		} else if token.Type == IDENTIFIER {
-			value, err := p.parseToken(false /* isQuoted */)
-			if err != nil {
-				return nil, err
-			}
-			kv.Value = value
-		} else if token.Type == DOUBLEQUOTE {
-			value, err := p.parseToken(true /* isQuoted */)
+		} else if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
+			value, err := p.parseStringValue(token)
 			if err != nil {
 				return nil, err
 			}
 			kv.Value = value
 		}
-
 		subKeyValues = append(subKeyValues, kv)
 	}
 	return subKeyValues, nil
 }
 
 func (p *Parser) parseToken(isQuoted bool) (string, error) {
+	if isQuoted {
+		// Consume the opening double quote
+		if _, err := p.lexer.next(); err != nil {
+			return "", err
+		}
+	}
+
 	var value string
 	for {
-		token, err := p.lexer.Next()
+		token, err := p.lexer.next()
 		if err != nil {
 			return "", err
 		}
@@ -186,13 +175,14 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 					return "", errors.New("escape sequence not allowed")
 				}
 
-				if token, err := p.lexer.Peek(); err != nil {
+				token, err := p.lexer.peek()
+				if err != nil {
 					return "", err
 				} else if token.Type != DOUBLEQUOTE {
 					return "", errors.New("escape sequence must be followed by double quote")
 				}
 
-				token, err = p.lexer.Next()
+				token, err = p.lexer.next()
 				if err != nil {
 					return "", err
 				}
@@ -208,6 +198,5 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 			value += token.Lexeme
 		}
 	}
-
 	return value, nil
 }

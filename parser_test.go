@@ -226,3 +226,37 @@ func TestParser_DeeplyNestedKeyValues(t *testing.T) {
 		t.Errorf("got value %q, expected %q", nestedObj3[1].Value, "nested3_value2")
 	}
 }
+
+func TestParser_UnquotedIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	testString := `root
+{
+	key value
+}`
+
+	kv, err := Parse([]byte(testString))
+	if err != nil {
+		t.Fatalf("Parse(): = %v", err)
+	}
+
+	if kv.Key != "root" {
+		t.Errorf("got key %q, expected %q", kv.Key, "root")
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(subValues))
+	}
+
+	if subValues[0].Key != "key" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "key")
+	}
+	if subValues[0].Value != "value" {
+		t.Errorf("got value %q, expected %q", subValues[0].Value, "value")
+	}
+}

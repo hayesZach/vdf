@@ -30,19 +30,6 @@ func (l *Lexer) unread() error {
 	return l.r.UnreadRune()
 }
 
-func (l *Lexer) peek() (rune, error) {
-	ch, err := l.read()
-	if err != nil {
-		return 0, err
-	}
-
-	if err := l.unread(); err != nil {
-		return 0, err
-	}
-
-	return ch, nil
-}
-
 func (l *Lexer) skipWhitespace() error {
 	for {
 		ch, err := l.read()
@@ -61,7 +48,7 @@ func (l *Lexer) skipWhitespace() error {
 	}
 }
 
-func (l *Lexer) Next() (*Token, error) {
+func (l *Lexer) next() (*Token, error) {
 	if l.ignoreWhitespace {
 		if err := l.skipWhitespace(); err != nil {
 			return nil, err
@@ -79,18 +66,18 @@ func (l *Lexer) Next() (*Token, error) {
 	return NewToken(ch), nil
 }
 
-func (l *Lexer) Peek() (token *Token, err error) {
+func (l *Lexer) peek() (token *Token, err error) {
 	defer func() {
 		unreadErr := l.unread()
 		if unreadErr != nil {
 
-			// Check if l.Next() already returned an error
+			// Check if l.next() already returned an error
 			if err == nil {
 				err = unreadErr
 			}
 		}
 	}()
 
-	token, err = l.Next()
+	token, err = l.next()
 	return
 }
