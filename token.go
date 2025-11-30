@@ -34,6 +34,31 @@ const (
 	COMMENT
 )
 
+func (t TokenType) String() string {
+	switch t {
+	case ILLEGAL:
+		return "ILLEGAL"
+	case EOF:
+		return "EOF"
+	case IDENTIFIER:
+		return "IDENTIFIER"
+	case WHITESPACE:
+		return "WHITESPACE"
+	case LBRACE:
+		return "LBRACE"
+	case RBRACE:
+		return "RBRACE"
+	case DOUBLEQUOTE:
+		return "DOUBLEQUOTE"
+	case ESCAPE:
+		return "ESCAPE"
+	case COMMENT:
+		return "COMMENT"
+	default:
+		return "INVALID"
+	}
+}
+
 type Token struct {
 	Type   TokenType
 	Lexeme string
