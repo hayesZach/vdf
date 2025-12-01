@@ -24,7 +24,11 @@ func NewParserWithOptions(r io.Reader, ignoreWhitespace bool, usesEscapeSequence
 }
 
 func Parse(b []byte) (*KeyValue, error) {
-	parser := NewParser(bytes.NewReader(b))
+	return ParseWithOptions(b, false, false)
+}
+
+func ParseWithOptions(b []byte, ignoreWhitespace bool, usesEscapeSequences bool) (*KeyValue, error) {
+	parser := NewParserWithOptions(bytes.NewReader(b), ignoreWhitespace, usesEscapeSequences)
 	return parser.parse()
 }
 
@@ -175,18 +179,11 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 					return "", errors.New("escape sequence not allowed")
 				}
 
-				token, err := p.lexer.peek()
-				if err != nil {
-					return "", err
-				} else if token.Type != DOUBLEQUOTE {
-					return "", errors.New("escape sequence must be followed by double quote")
-				}
-
-				token, err = p.lexer.next()
+				val, err := p.parseEscapeSequence()
 				if err != nil {
 					return "", err
 				}
-				value += token.Lexeme
+				value += val
 			}
 		} else {
 			if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE || token.Type == DOUBLEQUOTE {
@@ -199,4 +196,29 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 		}
 	}
 	return value, nil
+}
+
+// Escape sequences must be \\, \", \n, or \t
+func (p *Parser) parseEscapeSequence() (string, error) {
+	token, err := p.lexer.next()
+	if err != nil {
+		return "", err
+	}
+
+	switch token.Type {
+	case ESCAPE:
+		return "\\", nil
+	case DOUBLEQUOTE:
+		return "\"", nil
+	case IDENTIFIER:
+		if token.Lexeme == "n" {
+			return "\n", nil
+		} else if token.Lexeme == "t" {
+			return "\t", nil
+		}
+		fallthrough
+	default:
+		return "", fmt.Errorf("invalid escape sequence %q with value %q", token.Type.String(), token.Lexeme)
+	}
+
 }
