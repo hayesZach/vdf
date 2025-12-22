@@ -5,20 +5,19 @@ import (
 	"io"
 )
 
-type Lexer struct {
-	r *bufio.Reader
-
+type lexer struct {
+	r                *bufio.Reader
 	ignoreWhitespace bool
 }
 
-func NewLexer(r io.Reader, ignoreWhitespace bool) *Lexer {
-	return &Lexer{
+func newLexer(r io.Reader, ignoreWhitespace bool) *lexer {
+	return &lexer{
 		r:                bufio.NewReader(r),
 		ignoreWhitespace: ignoreWhitespace,
 	}
 }
 
-func (l *Lexer) read() (rune, error) {
+func (l *lexer) read() (rune, error) {
 	ch, _, err := l.r.ReadRune()
 	if err != nil {
 		return 0, err
@@ -26,24 +25,11 @@ func (l *Lexer) read() (rune, error) {
 	return ch, nil
 }
 
-func (l *Lexer) unread() error {
+func (l *lexer) unread() error {
 	return l.r.UnreadRune()
 }
 
-func (l *Lexer) peek() (rune, error) {
-	ch, err := l.read()
-	if err != nil {
-		return 0, err
-	}
-
-	if err := l.unread(); err != nil {
-		return 0, err
-	}
-
-	return ch, nil
-}
-
-func (l *Lexer) skipWhitespace() error {
+func (l *lexer) skipWhitespace() error {
 	for {
 		ch, err := l.read()
 		if err != nil {
@@ -61,16 +47,19 @@ func (l *Lexer) skipWhitespace() error {
 	}
 }
 
-func (l *Lexer) Next() (*Token, error) {
+func (l *lexer) next() (*Token, error) {
 	if l.ignoreWhitespace {
 		if err := l.skipWhitespace(); err != nil {
+			if err == io.EOF {
+				return NewToken(0), nil
+			}
 			return nil, err
 		}
 	}
 
 	ch, err := l.read()
 	if err == io.EOF {
-		return NewToken(ch), err
+		return NewToken(ch), nil
 	}
 	if err != nil {
 		return nil, err
@@ -79,18 +68,20 @@ func (l *Lexer) Next() (*Token, error) {
 	return NewToken(ch), nil
 }
 
-func (l *Lexer) Peek() (token *Token, err error) {
-	defer func() {
-		unreadErr := l.unread()
-		if unreadErr != nil {
+func (l *lexer) peek() (*Token, error) {
+	token, err := l.next()
+	if err != nil {
+		return nil, err
+	}
 
-			// Check if l.Next() already returned an error
-			if err == nil {
-				err = unreadErr
-			}
-		}
-	}()
+	// Cannot unread EOF
+	if token.Type == EOF {
+		return token, nil
+	}
 
-	token, err = l.Next()
-	return
+	if err := l.unread(); err != nil {
+		return nil, err
+	}
+
+	return token, nil
 }
