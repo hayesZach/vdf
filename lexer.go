@@ -51,7 +51,7 @@ func (l *lexer) next() (*Token, error) {
 	if l.ignoreWhitespace {
 		if err := l.skipWhitespace(); err != nil {
 			if err == io.EOF {
-				return NewToken(0), nil
+				return NewEOFToken(), nil
 			}
 			return nil, err
 		}
@@ -59,7 +59,7 @@ func (l *lexer) next() (*Token, error) {
 
 	ch, err := l.read()
 	if err == io.EOF {
-		return NewToken(ch), nil
+		return NewEOFToken(), nil
 	}
 	if err != nil {
 		return nil, err

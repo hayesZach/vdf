@@ -59,15 +59,20 @@ func isIdentifier(ch rune) bool {
 	return !isControlCharacter(ch)
 }
 
+func NewEOFToken() *Token {
+	return &Token{
+		Type:   EOF,
+		Lexeme: "",
+	}
+}
+
 func NewToken(ch rune) *Token {
 	token := &Token{
 		Type:   ILLEGAL,
 		Lexeme: string(ch),
 	}
 
-	if ch == 0 {
-		token.Type = EOF
-	} else if isWhitespace(ch) {
+	if isWhitespace(ch) {
 		token.Type = WHITESPACE
 	} else if ch == '\\' {
 		token.Type = ESCAPE

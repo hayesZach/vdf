@@ -394,7 +394,7 @@ func TestLexer_Peek(t *testing.T) {
 			input: "",
 			want: &Token{
 				Type:   EOF,
-				Lexeme: "\x00",
+				Lexeme: "",
 			},
 		},
 		{
