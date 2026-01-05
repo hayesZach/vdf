@@ -1,7 +1,6 @@
 package vdf
 
 import (
-	"bytes"
 	"io"
 	"reflect"
 	"testing"
@@ -36,12 +35,11 @@ func TestLexer_Read(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
 
 			result := make([]rune, 0)
 			for {
-				ch, err := lexer.read()
+				ch, _, err := lexer.read()
 				if err == io.EOF {
 					break
 				}
@@ -76,20 +74,19 @@ func TestLexer_Unread(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
 
-			_, err := lexer.read()
+			_, size, err := lexer.read()
 			if err != nil {
 				t.Fatalf("read(): %v", err)
 			}
 
-			err = lexer.unread()
+			err = lexer.unread(size)
 			if err != nil {
 				t.Fatalf("unread(): %v", err)
 			}
 
-			ch, err := lexer.read()
+			ch, _, err := lexer.read()
 			if err != nil {
 				t.Fatalf("read(): %v", err)
 			}
@@ -116,10 +113,9 @@ func TestLexer_Unread_EmptyString(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
 
-			if err := lexer.unread(); err == nil {
+			if err := lexer.unread(1); err == nil {
 				t.Fatal("unread() succeeded, wanted error")
 			}
 		})
@@ -138,12 +134,7 @@ func TestLexer_Next(t *testing.T) {
 			name:  "simpleString",
 			input: `"root"`,
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER,
-				IDENTIFIER,
-				IDENTIFIER,
-				IDENTIFIER,
-				DOUBLEQUOTE,
+				STRING,
 				EOF,
 			},
 		},
@@ -151,27 +142,16 @@ func TestLexer_Next(t *testing.T) {
 			name:  "withWhitespace",
 			input: `" r o o t "`,
 			want: []TokenType{
-				DOUBLEQUOTE,
-				WHITESPACE,
-				IDENTIFIER,
-				WHITESPACE,
-				IDENTIFIER,
-				WHITESPACE,
-				IDENTIFIER,
-				WHITESPACE,
-				IDENTIFIER,
-				WHITESPACE,
-				DOUBLEQUOTE,
+				STRING,
 				EOF,
 			},
 		},
 		{
-			name:  "allTokenTypes",
-			input: `{}"\ `,
+			name:  "allTokenTypesExceptDoubleQuotes",
+			input: `{}\ `,
 			want: []TokenType{
 				LBRACE,
 				RBRACE,
-				DOUBLEQUOTE,
 				ESCAPE,
 				WHITESPACE,
 				EOF,
@@ -203,8 +183,7 @@ func TestLexer_Next(t *testing.T) {
 				LBRACE,
 				RBRACE,
 				RBRACE,
-				DOUBLEQUOTE,
-				DOUBLEQUOTE,
+				STRING,
 				ESCAPE,
 				ESCAPE,
 				EOF,
@@ -214,34 +193,44 @@ func TestLexer_Next(t *testing.T) {
 			name:  "realisticVDF",
 			input: `"root"{"key""value"}`,
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // r o o t
-				DOUBLEQUOTE,
+				STRING, // root
 				LBRACE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, // k e y
-				DOUBLEQUOTE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // v a l u e
-				DOUBLEQUOTE,
+				STRING, // key
+				STRING, // value
 				RBRACE,
 				EOF,
 			},
 		},
 		{
-			name:  "multilineVDF",
+			name:  "multiLineVDF",
 			input: "\"root\"\n{\n\t\"key\"\n}",
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // r o o t
-				DOUBLEQUOTE,
+				STRING,     // root
 				WHITESPACE, // \n
 				LBRACE,
 				WHITESPACE, // \n
 				WHITESPACE, // \t
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, // k e y
-				DOUBLEQUOTE,
+				STRING,     // key
+				WHITESPACE, // \n
+				RBRACE,
+				EOF,
+			},
+		},
+		{
+			name: "multiLineVDFRaw",
+			input: `"root"
+{
+	"key" "value"
+}`,
+			want: []TokenType{
+				STRING,     // root
+				WHITESPACE, // \n
+				LBRACE,
+				WHITESPACE, // \n
+				WHITESPACE, // \t
+				STRING,     // key
+				WHITESPACE,
+				STRING,     // value
 				WHITESPACE, // \n
 				RBRACE,
 				EOF,
@@ -251,15 +240,7 @@ func TestLexer_Next(t *testing.T) {
 			name:  "escapeSequences",
 			input: `"text\"with\"escapes"`,
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // t e x t
-				ESCAPE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // w i t h
-				ESCAPE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // e s c a p e s
-				DOUBLEQUOTE,
+				STRING,
 				EOF,
 			},
 		},
@@ -267,12 +248,8 @@ func TestLexer_Next(t *testing.T) {
 			name:  "numbersAsIdentifiers",
 			input: `"123""456"`,
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, // 1 2 3
-				DOUBLEQUOTE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, // 4 5 6
-				DOUBLEQUOTE,
+				STRING, // 123
+				STRING, // 456
 				EOF,
 			},
 		},
@@ -291,8 +268,7 @@ func TestLexer_Next(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
 
 			result := make([]TokenType, 0)
 			for {
@@ -324,11 +300,10 @@ func TestLexer_Next_IgnoreWhitespace(t *testing.T) {
 	}{
 		{
 			name:  "whitespaceIgnored",
-			input: `{ } " \ `,
+			input: `{ } \ `,
 			want: []TokenType{
 				LBRACE,
 				RBRACE,
-				DOUBLEQUOTE,
 				ESCAPE,
 				EOF,
 			},
@@ -337,12 +312,8 @@ func TestLexer_Next_IgnoreWhitespace(t *testing.T) {
 			name:  "multilineWithWhitespaceIgnored",
 			input: "\t\n  \"key\"\n\t  \"value\"  \n",
 			want: []TokenType{
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, // k e y
-				DOUBLEQUOTE,
-				DOUBLEQUOTE,
-				IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, IDENTIFIER, // v a l u e
-				DOUBLEQUOTE,
+				STRING, // key
+				STRING, // value
 				EOF,
 			},
 		},
@@ -350,14 +321,13 @@ func TestLexer_Next_IgnoreWhitespace(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, true /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), true /* ignoreWhitespace */)
 
 			result := make([]TokenType, 0)
 			for {
 				token, err := lexer.next()
 				if err != nil {
-					t.Fatalf("readNext(): %v", err)
+					t.Fatalf("next(): %v", err)
 				}
 
 				result = append(result, token.Type)
@@ -379,136 +349,73 @@ func TestLexer_Peek(t *testing.T) {
 	testCases := []struct {
 		name  string
 		input string
-		want  *Token
+		want  rune
 	}{
 		{
 			name:  "simpleString",
 			input: `"root"`,
-			want: &Token{
-				Type:   DOUBLEQUOTE,
-				Lexeme: "\"",
-			},
-		},
-		{
-			name:  "emptyString",
-			input: "",
-			want: &Token{
-				Type:   EOF,
-				Lexeme: "",
-			},
+			want:  '"',
 		},
 		{
 			name:  "peekLBrace",
 			input: `{`,
-			want: &Token{
-				Type:   LBRACE,
-				Lexeme: "{",
-			},
+			want:  '{',
 		},
 		{
 			name:  "peekRBrace",
 			input: `}`,
-			want: &Token{
-				Type:   RBRACE,
-				Lexeme: "}",
-			},
+			want:  '}',
 		},
 		{
 			name:  "peekEscape",
 			input: `\n`,
-			want: &Token{
-				Type:   ESCAPE,
-				Lexeme: "\\",
-			},
+			want:  '\\',
 		},
 		{
 			name:  "peekWhitespace",
 			input: " test",
-			want: &Token{
-				Type:   WHITESPACE,
-				Lexeme: " ",
-			},
+			want:  ' ',
 		},
 		{
 			name:  "peekTab",
 			input: "\tvalue",
-			want: &Token{
-				Type:   WHITESPACE,
-				Lexeme: "\t",
-			},
+			want:  '\t',
 		},
 		{
 			name:  "peekNewline",
 			input: "\nvalue",
-			want: &Token{
-				Type:   WHITESPACE,
-				Lexeme: "\n",
-			},
+			want:  '\n',
 		},
 		{
 			name:  "peekIdentifier",
 			input: "abc",
-			want: &Token{
-				Type:   IDENTIFIER,
-				Lexeme: "a",
-			},
+			want:  'a',
 		},
 		{
 			name:  "peekDigit",
 			input: "123",
-			want: &Token{
-				Type:   IDENTIFIER,
-				Lexeme: "1",
-			},
+			want:  '1',
 		},
 		{
 			name:  "peekSpecialChar",
 			input: "@test",
-			want: &Token{
-				Type:   IDENTIFIER,
-				Lexeme: "@",
-			},
+			want:  '@',
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bytes.NewReader([]byte(tc.input))
-			lexer := newLexer(r, false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
 
-			token, err := lexer.peek()
+			r, err := lexer.peek()
 			if err != nil {
 				t.Fatalf("peek(): %v", err)
 			}
 
-			if token.Type != tc.want.Type {
-				t.Errorf("got token type %v, wanted %v", token.Type, tc.want.Type)
-			}
-			if token.Lexeme != tc.want.Lexeme {
-				t.Errorf("got lexeme %s, wanted %s", token.Lexeme, tc.want.Lexeme)
+			if r != tc.want {
+				t.Errorf("got rune %v, wanted %v", r, tc.want)
 			}
 		})
-	}
-}
-
-func TestLexer_Peek_IgnoreWhitespace(t *testing.T) {
-	t.Parallel()
-
-	input := "   \"key\""
-	r := bytes.NewReader([]byte(input))
-	lexer := newLexer(r, true /* ignoreWhitespace */)
-
-	token, err := lexer.peek()
-	if err != nil {
-		t.Fatalf("peek(): %v", err)
-	}
-
-	// Should skip whitespace and peek at the double quote
-	if token.Type != DOUBLEQUOTE {
-		t.Errorf("got token type %v, wanted %v", token.Type, DOUBLEQUOTE)
-	}
-	if token.Lexeme != "\"" {
-		t.Errorf("got lexeme %q, wanted %q", token.Lexeme, "\"")
 	}
 }
 
@@ -516,60 +423,26 @@ func TestLexer_Peek_DoesNotConsume(t *testing.T) {
 	t.Parallel()
 
 	input := `"root"`
-	r := bytes.NewReader([]byte(input))
-	lexer := newLexer(r, false /* ignoreWhitespace */)
+	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
 
-	expectedToken := &Token{
-		Type:   DOUBLEQUOTE,
-		Lexeme: `"`,
+	expectedRune := '"'
+
+	// Peek multiple times to ensure that the rune is not consumed
+	for i := 0; i < 3; i++ {
+		r, err := lexer.peek()
+		if err != nil {
+			t.Fatalf("peek(): %v", err)
+		}
+		if r != expectedRune {
+			t.Errorf("got rune %v, wanted %v", r, expectedRune)
+		}
 	}
 
-	token1, err := lexer.peek()
+	firstRune, _, err := lexer.read()
 	if err != nil {
-		t.Fatalf("peek(): %v", err)
+		t.Fatalf("read(): %v", err)
 	}
-
-	if token1.Type != expectedToken.Type {
-		t.Errorf("got token type %v, wanted %v", token1.Type, expectedToken.Type)
-	}
-	if token1.Lexeme != expectedToken.Lexeme {
-		t.Errorf("got lexeme %s, wanted %s", token1.Lexeme, expectedToken.Lexeme)
-	}
-
-	token2, err := lexer.peek()
-	if err != nil {
-		t.Fatalf("peek(): %v", err)
-	}
-
-	if token2.Type != expectedToken.Type {
-		t.Errorf("got token type %v, wanted %v", token2.Type, expectedToken.Type)
-	}
-	if token2.Lexeme != expectedToken.Lexeme {
-		t.Errorf("got lexeme %s, wanted %s", token2.Lexeme, expectedToken.Lexeme)
-	}
-
-	token3, err := lexer.peek()
-	if err != nil {
-		t.Fatalf("peek(): %v", err)
-	}
-
-	if token3.Type != expectedToken.Type {
-		t.Errorf("got token type %v, wanted %v", token3.Type, expectedToken.Type)
-	}
-	if token3.Lexeme != expectedToken.Lexeme {
-		t.Errorf("got lexeme %s, wanted %s", token3.Lexeme, expectedToken.Lexeme)
-	}
-
-	// Verify that next() returns the same token as the calls to peek()
-	nextToken, err := lexer.next()
-	if err != nil {
-		t.Fatalf("next(): %v", err)
-	}
-
-	if nextToken.Type != expectedToken.Type {
-		t.Errorf("got token type %v, wanted %v", nextToken.Type, expectedToken.Type)
-	}
-	if nextToken.Lexeme != expectedToken.Lexeme {
-		t.Errorf("got lexeme %s, wanted %s", nextToken.Lexeme, expectedToken.Lexeme)
+	if firstRune != expectedRune {
+		t.Errorf("got rune %v, wanted %v", firstRune, expectedRune)
 	}
 }

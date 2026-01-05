@@ -11,6 +11,9 @@ const (
 	// IDENTIFIER can be a key or value
 	IDENTIFIER
 
+	// STRING is a quoted string
+	STRING
+
 	// WHITESPACE can be space, return, newline, or tabulator
 	WHITESPACE
 
@@ -33,6 +36,33 @@ const (
 	// COMMENT is the comment prefix denoted as `//`
 	COMMENT
 )
+
+func (t *TokenType) String() string {
+	switch *t {
+	case ILLEGAL:
+		return "ILLEGAL"
+	case EOF:
+		return "EOF"
+	case IDENTIFIER:
+		return "IDENTIFIER"
+	case STRING:
+		return "STRING"
+	case WHITESPACE:
+		return "WHITESPACE"
+	case LBRACE:
+		return "LBRACE"
+	case RBRACE:
+		return "RBRACE"
+	case DOUBLEQUOTE:
+		return "DOUBLEQUOTE"
+	case ESCAPE:
+		return "ESCAPE"
+	case COMMENT:
+		return "COMMENT"
+	default:
+		return "UNKNOWN"
+	}
+}
 
 type Token struct {
 	Type   TokenType
@@ -59,13 +89,6 @@ func isIdentifier(ch rune) bool {
 	return !isControlCharacter(ch)
 }
 
-func NewEOFToken() *Token {
-	return &Token{
-		Type:   EOF,
-		Lexeme: "",
-	}
-}
-
 func NewToken(ch rune) *Token {
 	token := &Token{
 		Type:   ILLEGAL,
@@ -86,4 +109,18 @@ func NewToken(ch rune) *Token {
 		token.Type = IDENTIFIER
 	}
 	return token
+}
+
+func NewStringToken(value string) *Token {
+	return &Token{
+		Type:   STRING,
+		Lexeme: value,
+	}
+}
+
+func NewEOFToken() *Token {
+	return &Token{
+		Type:   EOF,
+		Lexeme: "",
+	}
 }
