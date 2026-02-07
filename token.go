@@ -32,13 +32,10 @@ const (
 	// ESCAPE is the literal backslash `\`
 	// Represents an escape character
 	ESCAPE
-
-	// COMMENT is the comment prefix denoted as `//`
-	COMMENT
 )
 
-func (t *TokenType) String() string {
-	switch *t {
+func (t TokenType) String() string {
+	switch t {
 	case ILLEGAL:
 		return "ILLEGAL"
 	case EOF:
@@ -57,8 +54,6 @@ func (t *TokenType) String() string {
 		return "DOUBLEQUOTE"
 	case ESCAPE:
 		return "ESCAPE"
-	case COMMENT:
-		return "COMMENT"
 	default:
 		return "UNKNOWN"
 	}

@@ -74,7 +74,7 @@ func (l *lexer) skipComments() error {
 
 		next, nextSz, err := l.read()
 		if err == io.EOF {
-			if err := l.unread(size); err != nil {
+			if err := l.unread(size + nextSz); err != nil {
 				return err
 			}
 			return nil
@@ -83,45 +83,28 @@ func (l *lexer) skipComments() error {
 			return err
 		}
 
-		switch next {
-		case '/':
-			// Line comment - consume until newline encountered
-			for {
-				r, _, err := l.read()
-				if err == io.EOF {
-					// Line comment ended at EOF
-					return nil
-				}
-				if err != nil {
-					return err
-				}
-
-				if r == '\n' {
-					break
-				}
-			}
-		case '*':
-			// Block comment - consume until block comment ends
-			var prev rune
-			for {
-				r, _, err := l.read()
-				if err == io.EOF {
-					return fmt.Errorf("block comment ends without being terminated")
-				}
-				if err != nil {
-					return err
-				}
-
-				if prev == '*' && r == '/' {
-					break
-				}
-				prev = r
-			}
-		default:
+		if next != '/' && next != '*' {
 			if err := l.unread(size + nextSz); err != nil {
 				return err
 			}
 			return nil
+		}
+
+		// Line comments and block comments end with a newline
+		for {
+			r, _, err := l.read()
+			if err == io.EOF {
+				// Comment ended at EOF
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			if r == '\n' {
+				// Newline found, end of current comment
+				break
+			}
 		}
 	}
 }
