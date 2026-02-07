@@ -128,20 +128,17 @@ func (l *lexer) peekN(n int) (rune, error) {
 		return 0, err
 	}
 
+	var r rune
 	pos := l.pos
-	for i := 0; i < n-1; i++ {
+	for i := 0; i < n; i++ {
 		if err := boundsCheck(pos); err != nil {
 			return 0, err
 		}
-		_, size := utf8.DecodeRune(l.buf[pos:])
+
+		var size int
+		r, size = utf8.DecodeRune(l.buf[pos:])
 		pos += size
 	}
-
-	if err := boundsCheck(pos); err != nil {
-		return 0, err
-	}
-
-	r, _ := utf8.DecodeRune(l.buf[pos:])
 	return r, nil
 }
 
