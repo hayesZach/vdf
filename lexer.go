@@ -188,7 +188,7 @@ func (l *lexer) readString() (string, error) {
 		r, _, err := l.read()
 		if err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("unterminated string")
+				return "", fmt.Errorf("unterminated string literal")
 			}
 			return "", err
 		}
@@ -198,7 +198,7 @@ func (l *lexer) readString() (string, error) {
 			next, _, err := l.read()
 			if err != nil {
 				if err == io.EOF {
-					return "", fmt.Errorf("unterminated escape sequence")
+					return "", fmt.Errorf("unterminated string literal")
 				}
 				return "", err
 			}
@@ -212,9 +212,10 @@ func (l *lexer) readString() (string, error) {
 				sb.WriteRune('\n')
 			case 't':
 				sb.WriteRune('\t')
+			case 'r':
+				sb.WriteRune('\r')
 			default:
-				sb.WriteRune('\\')
-				sb.WriteRune(next)
+				return "", fmt.Errorf("invalid escape sequence: %c", next)
 			}
 			continue
 		}
