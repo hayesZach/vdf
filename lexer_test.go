@@ -372,6 +372,33 @@ func TestLexer_peekN(t *testing.T) {
 	}
 }
 
+func TestLexer_peekN_DoesNotConsume(t *testing.T) {
+	t.Parallel()
+
+	input := `"root"`
+	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
+
+	expectedRune := '"'
+
+	for i := 0; i < 3; i++ {
+		r, err := lexer.peekN(1)
+		if err != nil {
+			t.Fatalf("peekN(): %v", err)
+		}
+		if r != expectedRune {
+			t.Errorf("got rune %v, wanted %v", r, expectedRune)
+		}
+	}
+
+	r, _, err := lexer.read()
+	if err != nil {
+		t.Fatalf("read(): %v", err)
+	}
+	if r != expectedRune {
+		t.Errorf("got rune %v, wanted %v", r, expectedRune)
+	}
+}
+
 func TestLexer_peek(t *testing.T) {
 	t.Parallel()
 
