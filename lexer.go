@@ -169,13 +169,8 @@ func (l *lexer) next() (*Token, error) {
 		}
 	}
 
-	r, _, err := l.read()
-	if err != nil {
-		if err == io.EOF {
-			return NewEOFToken(), nil
-		}
-		return nil, err
-	}
+	// Guaranteed to not return an error since we've already checked for EOF
+	r, _, _ := l.read()
 
 	if r == '"' {
 		value, err := l.readString()
