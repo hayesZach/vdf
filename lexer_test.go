@@ -523,9 +523,10 @@ func TestLexer_next(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name  string
-		input string
-		want  []TokenType
+		name    string
+		input   string
+		want    []TokenType
+		wantErr string
 	}{
 		{
 			name:  "simpleString",
@@ -667,12 +668,9 @@ func TestLexer_next(t *testing.T) {
 			want:  []TokenType{EOF},
 		},
 		{
-			name:  "unterminatedString",
-			input: `"unterminated`,
-			want: []TokenType{
-				STRING,
-				EOF,
-			},
+			name:    "unterminatedString",
+			input:   `"unterminated`,
+			wantErr: "unterminated string literal",
 		},
 		{
 			name:  "emptyInput",
@@ -688,6 +686,15 @@ func TestLexer_next(t *testing.T) {
 			result := make([]TokenType, 0)
 			for {
 				token, err := lexer.next()
+				if tc.wantErr != "" {
+					if err == nil {
+						t.Fatalf("wanted error %v, got nil", tc.wantErr)
+					}
+					if err.Error() != tc.wantErr {
+						t.Fatalf("wanted error %v, got %v", tc.wantErr, err)
+					}
+					return
+				}
 				if err != nil {
 					t.Fatalf("next(): %v", err)
 				}
