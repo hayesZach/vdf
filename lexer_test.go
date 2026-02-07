@@ -661,6 +661,24 @@ func TestLexer_next(t *testing.T) {
 				EOF,
 			},
 		},
+		{
+			name:  "onlyComments",
+			input: "// comment\n/* block comment */",
+			want:  []TokenType{EOF},
+		},
+		{
+			name:  "unterminatedString",
+			input: `"unterminated`,
+			want: []TokenType{
+				STRING,
+				EOF,
+			},
+		},
+		{
+			name:  "emptyInput",
+			input: "",
+			want:  []TokenType{EOF},
+		},
 	}
 
 	for _, tc := range testCases {
