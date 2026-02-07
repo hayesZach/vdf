@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLexer_Read(t *testing.T) {
+func TestLexer_read(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -57,7 +57,7 @@ func TestLexer_Read(t *testing.T) {
 	}
 }
 
-func TestLexer_Unread(t *testing.T) {
+func TestLexer_unread(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -98,7 +98,7 @@ func TestLexer_Unread(t *testing.T) {
 	}
 }
 
-func TestLexer_Unread_EmptyString(t *testing.T) {
+func TestLexer_unread_EmptyString(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -356,6 +356,9 @@ func TestLexer_peekN(t *testing.T) {
 				if err == nil {
 					t.Fatal("peekN() succeeded, wanted error")
 				}
+				if r != tc.want {
+					t.Errorf("wanted rune %v, got %v", tc.want, r)
+				}
 				return
 			}
 			if err != nil {
@@ -363,13 +366,133 @@ func TestLexer_peekN(t *testing.T) {
 			}
 
 			if r != tc.want {
-				t.Fatalf("wanted rune %q, got %q", tc.want, r)
+				t.Fatalf("wanted rune %v, got %v", tc.want, r)
 			}
 		})
 	}
 }
 
-func TestLexer_Next(t *testing.T) {
+func TestLexer_peek(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		input   string
+		want    rune
+		wantErr bool
+	}{
+		{
+			name:  "simpleString",
+			input: `"root"`,
+			want:  '"',
+		},
+		{
+			name:  "peekLBrace",
+			input: `{`,
+			want:  '{',
+		},
+		{
+			name:  "peekRBrace",
+			input: `}`,
+			want:  '}',
+		},
+		{
+			name:  "peekEscape",
+			input: `\n`,
+			want:  '\\',
+		},
+		{
+			name:  "peekWhitespace",
+			input: " test",
+			want:  ' ',
+		},
+		{
+			name:  "peekTab",
+			input: "\tvalue",
+			want:  '\t',
+		},
+		{
+			name:  "peekNewline",
+			input: "\nvalue",
+			want:  '\n',
+		},
+		{
+			name:  "peekIdentifier",
+			input: "abc",
+			want:  'a',
+		},
+		{
+			name:  "peekDigit",
+			input: "123",
+			want:  '1',
+		},
+		{
+			name:  "peekSpecialChar",
+			input: "@test",
+			want:  '@',
+		},
+		{
+			name:    "emptyInput",
+			input:   "",
+			want:    0,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+
+			r, err := lexer.peek()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("peek() succeeded, wanted error")
+				}
+				if r != tc.want {
+					t.Errorf("got rune %v, wanted %v", r, tc.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("peek(): %v", err)
+			}
+
+			if r != tc.want {
+				t.Errorf("got rune %v, wanted %v", r, tc.want)
+			}
+		})
+	}
+}
+
+func TestLexer_peek_DoesNotConsume(t *testing.T) {
+	t.Parallel()
+
+	input := `"root"`
+	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
+
+	expectedRune := '"'
+
+	// Peek multiple times to ensure that the rune is not consumed
+	for i := 0; i < 3; i++ {
+		r, err := lexer.peek()
+		if err != nil {
+			t.Fatalf("peek(): %v", err)
+		}
+		if r != expectedRune {
+			t.Errorf("got rune %v, wanted %v", r, expectedRune)
+		}
+	}
+
+	firstRune, _, err := lexer.read()
+	if err != nil {
+		t.Fatalf("read(): %v", err)
+	}
+	if firstRune != expectedRune {
+		t.Errorf("got rune %v, wanted %v", firstRune, expectedRune)
+	}
+}
+
+func TestLexer_next(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -537,7 +660,7 @@ func TestLexer_Next(t *testing.T) {
 	}
 }
 
-func TestLexer_Next_IgnoreWhitespace(t *testing.T) {
+func TestLexer_next_IgnoreWhitespace(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -587,109 +710,5 @@ func TestLexer_Next_IgnoreWhitespace(t *testing.T) {
 				t.Fatalf("got %v, wanted %v", result, tc.want)
 			}
 		})
-	}
-}
-
-func TestLexer_Peek(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name  string
-		input string
-		want  rune
-	}{
-		{
-			name:  "simpleString",
-			input: `"root"`,
-			want:  '"',
-		},
-		{
-			name:  "peekLBrace",
-			input: `{`,
-			want:  '{',
-		},
-		{
-			name:  "peekRBrace",
-			input: `}`,
-			want:  '}',
-		},
-		{
-			name:  "peekEscape",
-			input: `\n`,
-			want:  '\\',
-		},
-		{
-			name:  "peekWhitespace",
-			input: " test",
-			want:  ' ',
-		},
-		{
-			name:  "peekTab",
-			input: "\tvalue",
-			want:  '\t',
-		},
-		{
-			name:  "peekNewline",
-			input: "\nvalue",
-			want:  '\n',
-		},
-		{
-			name:  "peekIdentifier",
-			input: "abc",
-			want:  'a',
-		},
-		{
-			name:  "peekDigit",
-			input: "123",
-			want:  '1',
-		},
-		{
-			name:  "peekSpecialChar",
-			input: "@test",
-			want:  '@',
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
-
-			r, err := lexer.peek()
-			if err != nil {
-				t.Fatalf("peek(): %v", err)
-			}
-
-			if r != tc.want {
-				t.Errorf("got rune %v, wanted %v", r, tc.want)
-			}
-		})
-	}
-}
-
-func TestLexer_Peek_DoesNotConsume(t *testing.T) {
-	t.Parallel()
-
-	input := `"root"`
-	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
-
-	expectedRune := '"'
-
-	// Peek multiple times to ensure that the rune is not consumed
-	for i := 0; i < 3; i++ {
-		r, err := lexer.peek()
-		if err != nil {
-			t.Fatalf("peek(): %v", err)
-		}
-		if r != expectedRune {
-			t.Errorf("got rune %v, wanted %v", r, expectedRune)
-		}
-	}
-
-	firstRune, _, err := lexer.read()
-	if err != nil {
-		t.Fatalf("read(): %v", err)
-	}
-	if firstRune != expectedRune {
-		t.Errorf("got rune %v, wanted %v", firstRune, expectedRune)
 	}
 }
