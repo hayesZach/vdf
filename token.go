@@ -11,6 +11,9 @@ const (
 	// IDENTIFIER can be a key or value
 	IDENTIFIER
 
+	// STRING is a quoted string
+	STRING
+
 	// WHITESPACE can be space, return, newline, or tabulator
 	WHITESPACE
 
@@ -29,9 +32,6 @@ const (
 	// ESCAPE is the literal backslash `\`
 	// Represents an escape character
 	ESCAPE
-
-	// COMMENT is the comment prefix denoted as `//`
-	COMMENT
 )
 
 func (t TokenType) String() string {
@@ -42,6 +42,8 @@ func (t TokenType) String() string {
 		return "EOF"
 	case IDENTIFIER:
 		return "IDENTIFIER"
+	case STRING:
+		return "STRING"
 	case WHITESPACE:
 		return "WHITESPACE"
 	case LBRACE:
@@ -52,10 +54,8 @@ func (t TokenType) String() string {
 		return "DOUBLEQUOTE"
 	case ESCAPE:
 		return "ESCAPE"
-	case COMMENT:
-		return "COMMENT"
 	default:
-		return "INVALID"
+		return "UNKNOWN"
 	}
 }
 
@@ -90,9 +90,7 @@ func NewToken(ch rune) *Token {
 		Lexeme: string(ch),
 	}
 
-	if ch == 0 {
-		token.Type = EOF
-	} else if isWhitespace(ch) {
+	if isWhitespace(ch) {
 		token.Type = WHITESPACE
 	} else if ch == '\\' {
 		token.Type = ESCAPE
@@ -106,4 +104,18 @@ func NewToken(ch rune) *Token {
 		token.Type = IDENTIFIER
 	}
 	return token
+}
+
+func NewStringToken(value string) *Token {
+	return &Token{
+		Type:   STRING,
+		Lexeme: value,
+	}
+}
+
+func NewEOFToken() *Token {
+	return &Token{
+		Type:   EOF,
+		Lexeme: "",
+	}
 }

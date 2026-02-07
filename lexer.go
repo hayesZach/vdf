@@ -1,83 +1,229 @@
 package vdf
 
 import (
-	"bufio"
+	"fmt"
 	"io"
+	"strings"
+	"unicode/utf8"
 )
 
-type Lexer struct {
-	r *bufio.Reader
+type lexer struct {
+	buf []byte
+	pos int
 
 	ignoreWhitespace bool
 }
 
-func NewLexer(r io.Reader, ignoreWhitespace bool) *Lexer {
-	return &Lexer{
-		r:                bufio.NewReader(r),
+func newLexer(data []byte, ignoreWhitespace bool) *lexer {
+	return &lexer{
+		buf:              data,
+		pos:              0,
 		ignoreWhitespace: ignoreWhitespace,
 	}
 }
 
-func (l *Lexer) read() (rune, error) {
-	ch, _, err := l.r.ReadRune()
-	if err != nil {
-		return 0, err
+func (l *lexer) read() (r rune, size int, err error) {
+	if l.pos >= len(l.buf) {
+		return 0, 0, io.EOF
 	}
-	return ch, nil
+	current := l.buf[l.pos:]
+	r, size = utf8.DecodeRune(current)
+
+	l.pos += size
+	return r, size, nil
 }
 
-func (l *Lexer) unread() error {
-	return l.r.UnreadRune()
+func (l *lexer) unread(size int) error {
+	if size < 0 || size > l.pos {
+		return fmt.Errorf("invalid size: %d", size)
+	}
+	l.pos -= size
+	return nil
 }
 
-func (l *Lexer) skipWhitespace() error {
+func (l *lexer) skipWhitespace() error {
 	for {
-		ch, err := l.read()
+		r, size, err := l.read()
 		if err != nil {
 			return err
 		}
-
-		if isWhitespace(ch) {
+		if isWhitespace(r) {
 			continue
 		}
 
-		if err := l.unread(); err != nil {
+		if err := l.unread(size); err != nil {
 			return err
 		}
 		return nil
 	}
 }
 
-func (l *Lexer) next() (*Token, error) {
-	if l.ignoreWhitespace {
-		if err := l.skipWhitespace(); err != nil {
-			return nil, err
+func (l *lexer) skipComments() error {
+	for {
+		r, size, err := l.read()
+		if err != nil {
+			return err
 		}
-	}
 
-	ch, err := l.read()
-	if err == io.EOF {
-		return NewToken(ch), err
-	}
-	if err != nil {
-		return nil, err
-	}
+		if r != '/' {
+			if err := l.unread(size); err != nil {
+				return err
+			}
+			return nil
+		}
 
-	return NewToken(ch), nil
-}
+		next, nextSz, err := l.read()
+		if err == io.EOF {
+			if err := l.unread(size + nextSz); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 
-func (l *Lexer) peek() (token *Token, err error) {
-	defer func() {
-		unreadErr := l.unread()
-		if unreadErr != nil {
+		if next != '/' && next != '*' {
+			if err := l.unread(size + nextSz); err != nil {
+				return err
+			}
+			return nil
+		}
 
-			// Check if l.next() already returned an error
-			if err == nil {
-				err = unreadErr
+		// Line comments and block comments end with a newline
+		for {
+			r, _, err := l.read()
+			if err == io.EOF {
+				// Comment ended at EOF
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			if r == '\n' {
+				// Newline found, end of current comment
+				break
 			}
 		}
-	}()
+	}
+}
 
-	token, err = l.next()
-	return
+func (l *lexer) peek() (rune, error) {
+	if l.pos >= len(l.buf) {
+		return 0, io.EOF
+	}
+	r, _ := utf8.DecodeRune(l.buf[l.pos:])
+	return r, nil
+}
+
+func (l *lexer) peekN(n int) (rune, error) {
+	boundsCheck := func(index int) error {
+		if index >= len(l.buf) {
+			return io.EOF
+		}
+		return nil
+	}
+	if err := boundsCheck(l.pos); err != nil {
+		return 0, err
+	}
+
+	var r rune
+	pos := l.pos
+	for i := 0; i < n; i++ {
+		if err := boundsCheck(pos); err != nil {
+			return 0, err
+		}
+
+		var size int
+		r, size = utf8.DecodeRune(l.buf[pos:])
+		pos += size
+	}
+	return r, nil
+}
+
+func (l *lexer) next() (*Token, error) {
+	for {
+		startPos := l.pos
+
+		if l.ignoreWhitespace {
+			if err := l.skipWhitespace(); err != nil {
+				if err == io.EOF {
+					return NewEOFToken(), nil
+				}
+				return nil, err
+			}
+		}
+
+		// Always skip comments
+		if err := l.skipComments(); err != nil {
+			if err == io.EOF {
+				return NewEOFToken(), nil
+			}
+			return nil, err
+		}
+
+		// Position didn't change, done skipping
+		if startPos == l.pos {
+			break
+		}
+	}
+
+	// Guaranteed to not return an error since we've already checked for EOF
+	r, _, _ := l.read()
+
+	if r == '"' {
+		value, err := l.readString()
+		if err != nil {
+			return nil, err
+		}
+		return NewStringToken(value), nil
+	}
+	return NewToken(r), nil
+}
+
+func (l *lexer) readString() (string, error) {
+	var sb strings.Builder
+	for {
+		r, _, err := l.read()
+		if err != nil {
+			if err == io.EOF {
+				return "", fmt.Errorf("unterminated string literal")
+			}
+			return "", err
+		}
+
+		if r == '\\' {
+			// Handle escape sequences
+			next, _, err := l.read()
+			if err != nil {
+				if err == io.EOF {
+					return "", fmt.Errorf("unterminated string literal")
+				}
+				return "", err
+			}
+
+			switch next {
+			case '"':
+				sb.WriteRune('"')
+			case '\\':
+				sb.WriteRune('\\')
+			case 'n':
+				sb.WriteRune('\n')
+			case 't':
+				sb.WriteRune('\t')
+			case 'r':
+				sb.WriteRune('\r')
+			default:
+				return "", fmt.Errorf("invalid escape sequence: %c", next)
+			}
+			continue
+		}
+
+		if r == '"' {
+			break
+		}
+		sb.WriteRune(r)
+	}
+	return sb.String(), nil
 }
