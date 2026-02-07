@@ -242,6 +242,133 @@ func TestLexer_skipComments(t *testing.T) {
 	}
 }
 
+func TestLexer_peekN(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		input   string
+		n       int
+		want    rune
+		wantErr bool
+	}{
+		{
+			name:  "peekOneRune",
+			input: "test",
+			n:     1,
+			want:  't',
+		},
+		{
+			name:  "peekMultipleRunes",
+			input: "test",
+			n:     3,
+			want:  's',
+		},
+		{
+			name:  "simpleString",
+			input: `"root"`,
+			n:     2,
+			want:  'r',
+		},
+		{
+			name:  "peekLBrace",
+			input: `{`,
+			n:     1,
+			want:  '{',
+		},
+		{
+			name:  "peekRBrace",
+			input: `}`,
+			n:     1,
+			want:  '}',
+		},
+		{
+			name:  "peekEscape",
+			input: `\n`,
+			n:     1,
+			want:  '\\',
+		},
+		{
+			name:  "peekWhitespace",
+			input: " test",
+			n:     1,
+			want:  ' ',
+		},
+		{
+			name:  "peekTab",
+			input: "\tvalue",
+			n:     1,
+			want:  '\t',
+		},
+		{
+			name:  "peekNewline",
+			input: "\nvalue",
+			n:     1,
+			want:  '\n',
+		},
+		{
+			name:  "peekIdentifier",
+			input: "abc",
+			n:     1,
+			want:  'a',
+		},
+		{
+			name:  "peekDigit",
+			input: "123",
+			n:     1,
+			want:  '1',
+		},
+		{
+			name:  "peekSpecialChar",
+			input: "@test",
+			n:     1,
+			want:  '@',
+		},
+		{
+			name:    "peekBeyondInput",
+			input:   "test",
+			n:       5,
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "peekFurther",
+			input:   "test",
+			n:       7,
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "emptyInput",
+			input:   "",
+			n:       1,
+			want:    0,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false)
+
+			r, err := lexer.peekN(tc.n)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("peekN() succeeded, wanted error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("peekN(): %v", err)
+			}
+
+			if r != tc.want {
+				t.Fatalf("wanted rune %q, got %q", tc.want, r)
+			}
+		})
+	}
+}
+
 func TestLexer_Next(t *testing.T) {
 	t.Parallel()
 
