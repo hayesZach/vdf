@@ -122,6 +122,126 @@ func TestLexer_Unread_EmptyString(t *testing.T) {
 	}
 }
 
+func TestLexer_skipComments(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		input   string
+		wantPos int  // expected position after skipComments
+		wantErr bool // only true for EOF on empty input
+	}{
+		{
+			name:    "lineComment",
+			input:   "// this is a comment\nrest",
+			wantPos: 21, // position after newline
+		},
+		{
+			name:    "lineCommentAtEOF",
+			input:   "// comment without newline",
+			wantPos: 26, // consumes entire input
+		},
+		{
+			name:    "blockCommentEndsAtNewline",
+			input:   "/* block comment\nrest",
+			wantPos: 17, // position after newline (block comment ends at \n)
+		},
+		{
+			name:    "blockCommentAtEOF",
+			input:   "/* comment without newline",
+			wantPos: 26, // consumes entire input
+		},
+		{
+			name:    "blockCommentTraditionalSyntax",
+			input:   "/* comment */\nrest",
+			wantPos: 14, // ends at newline, not at */
+		},
+		{
+			name:    "multipleLineComments",
+			input:   "// first\n// second\nrest",
+			wantPos: 19, // skips both comments
+		},
+		{
+			name:    "multipleBlockComments",
+			input:   "/* first\n/* second\nrest",
+			wantPos: 19, // skips both comments (each ends at newline)
+		},
+		{
+			name:    "mixedComments",
+			input:   "// line\n/* block\nrest",
+			wantPos: 17,
+		},
+		{
+			name:    "notAComment",
+			input:   "notacomment",
+			wantPos: 0, // unreads the 'n', stays at start
+		},
+		{
+			name:    "slashFollowedByOther",
+			input:   "/notacomment",
+			wantPos: 0, // unreads both '/' and 'n'
+		},
+		{
+			name:    "slashAtEOF",
+			input:   "/",
+			wantPos: 0, // unreads the '/'
+		},
+		{
+			name:    "emptyInput",
+			input:   "",
+			wantPos: 0,
+			wantErr: true, // EOF error
+		},
+		{
+			name:    "commentThenQuotedString",
+			input:   "// comment\n\"key\"",
+			wantPos: 11, // stops before "key"
+		},
+		{
+			name:    "onlyNewline",
+			input:   "\nrest",
+			wantPos: 0, // not a comment, unreads
+		},
+		{
+			name:    "slashSlashNoContent",
+			input:   "//\nrest",
+			wantPos: 3, // skips // and newline
+		},
+		{
+			name:    "slashStarNoContent",
+			input:   "/*\nrest",
+			wantPos: 3, // skips /* and newline
+		},
+		{
+			name:    "commentsOnSameLine",
+			input:   "// first // second\nrest",
+			wantPos: 19, // entire line is one comment
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+
+			err := lexer.skipComments()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("skipComments() succeeded, wanted error")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("skipComments(): %v", err)
+			}
+
+			if lexer.pos != tc.wantPos {
+				t.Errorf("wanted pos %d, got %d", tc.wantPos, lexer.pos)
+			}
+		})
+	}
+}
+
 func TestLexer_Next(t *testing.T) {
 	t.Parallel()
 
