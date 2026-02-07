@@ -757,3 +757,102 @@ func TestLexer_next_IgnoreWhitespace(t *testing.T) {
 		})
 	}
 }
+
+func TestLexer_readString(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "simpleString",
+			input: `root"`,
+			want:  "root",
+		},
+		{
+			name:  "escapedString",
+			input: `text\"with\"escapes"`,
+			want:  "text\"with\"escapes",
+		},
+		{
+			name:  "escapedStringWithNewline",
+			input: `text\nwith\nescapes"`,
+			want:  "text\nwith\nescapes",
+		},
+		{
+			name:  "escapedStringWithTab",
+			input: `text\twith\tescapes"`,
+			want:  "text\twith\tescapes",
+		},
+		{
+			name:  "escapedStringWithBackslash",
+			input: `text\\with\\escapes"`,
+			want:  "text\\with\\escapes",
+		},
+		{
+			name:  "escapedStringWithCarriageReturn",
+			input: `text\rwith\rescapes"`,
+			want:  "text\rwith\rescapes",
+		},
+		{
+			name:  "escapedStringWithBackslashAndDoubleQuote",
+			input: `text\\\"with\\\"escapes"`,
+			want:  "text\\\"with\\\"escapes",
+		},
+		{
+			name:  "escapedStringWithBackslashAndNewline",
+			input: `text\\\nwith\\\nescapes"`,
+			want:  "text\\\nwith\\\nescapes",
+		},
+		{
+			name:  "escapedStringWithBackslashAndTab",
+			input: `text\\\twith\\\tescapes"`,
+			want:  "text\\\twith\\\tescapes",
+		},
+		{
+			name:    "unterminatedString",
+			input:   `unterminated`,
+			want:    "",
+			wantErr: "unterminated string literal",
+		},
+		{
+			name:    "incompleteEscapeSequence",
+			input:   `text\`,
+			want:    "",
+			wantErr: "unterminated string literal",
+		},
+		{
+			name:    "invalidEscapeSequence",
+			input:   `text\xwith\xescapes"`,
+			want:    "",
+			wantErr: "invalid escape sequence: x",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+
+			got, err := lexer.readString()
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("readString() succeeded, wanted error %v", tc.wantErr)
+				}
+				if err.Error() != tc.wantErr {
+					t.Errorf("wanted error %v, got %v", tc.wantErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readString(): %v", err)
+			}
+
+			if got != tc.want {
+				t.Errorf("wanted %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
