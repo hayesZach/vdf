@@ -863,3 +863,128 @@ func TestLexer_readString(t *testing.T) {
 		})
 	}
 }
+
+func TestLexer_calcLineAndColumn(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name       string
+		input      string
+		lineStarts []int
+		pos        int
+		wantLine   int
+		wantCol    int
+	}{
+		{
+			name:       "emptyLines",
+			input:      "\n\n",
+			pos:        1,
+			lineStarts: []int{0, 1},
+			wantLine:   2,
+			wantCol:    1,
+		},
+		{
+			name:       "firstLineIndexAtNewline",
+			input:      "hello\nworld",
+			pos:        5,
+			lineStarts: []int{0, 6},
+			wantLine:   1,
+			wantCol:    6,
+		},
+		{
+			name:       "firstLineFirstCharacter",
+			input:      "hello",
+			lineStarts: []int{0},
+			pos:        0,
+			wantLine:   1,
+			wantCol:    1,
+		},
+		{
+			name:       "firstLineMiddleCharacter",
+			input:      "hello",
+			lineStarts: []int{0},
+			pos:        2,
+			wantLine:   1,
+			wantCol:    3,
+		},
+		{
+			name:       "firstLineLastCharacter",
+			input:      "hello",
+			lineStarts: []int{0},
+			pos:        4,
+			wantLine:   1,
+			wantCol:    5,
+		},
+		{
+			name:       "secondLineFirstCharacter",
+			input:      "hello\nworld",
+			lineStarts: []int{0, 6},
+			pos:        6,
+			wantLine:   2,
+			wantCol:    1,
+		},
+		{
+			name:       "secondLineMiddleCharacter",
+			input:      "hello\nworld",
+			lineStarts: []int{0, 6},
+			pos:        8,
+			wantLine:   2,
+			wantCol:    3,
+		},
+		{
+			name:       "secondLineLastCharacter",
+			input:      "hello\nworld",
+			lineStarts: []int{0, 6},
+			pos:        10,
+			wantLine:   2,
+			wantCol:    5,
+		},
+		{
+			name:       "thirdLineFirstCharacter",
+			input:      "hello\nworld\nhello",
+			lineStarts: []int{0, 6, 12},
+			pos:        12,
+			wantLine:   3,
+			wantCol:    1,
+		},
+		{
+			name:       "manyLinesMiddleCharacter",
+			input:      "abc\ndef\nghi\njkl\nmno\npqr",
+			lineStarts: []int{0, 4, 8, 12, 16, 20},
+			pos:        13,
+			wantLine:   4,
+			wantCol:    2,
+		},
+		{
+			name:       "lastLineFirstCharacter",
+			input:      "abc\ndef\nghi\njkl\nmno\npqr",
+			lineStarts: []int{0, 4, 8, 12, 16, 20},
+			pos:        20,
+			wantLine:   6,
+			wantCol:    1,
+		},
+		{
+			name:       "unicodeCharacters",
+			input:      "hello 世界\nworld",
+			lineStarts: []int{0, 9},
+			pos:        11,
+			wantLine:   2,
+			wantCol:    3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer.lineStarts = tc.lineStarts
+			lexer.pos = tc.pos
+			line, col := lexer.calcLineAndColumn()
+			if line != tc.wantLine {
+				t.Errorf("wanted line %d, got %d", tc.wantLine, line)
+			}
+			if col != tc.wantCol {
+				t.Errorf("wanted col %d, got %d", tc.wantCol, col)
+			}
+		})
+	}
+}
