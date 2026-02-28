@@ -20,7 +20,7 @@ func newLexer(data []byte, ignoreWhitespace bool) *lexer {
 	return &lexer{
 		input:            data,
 		pos:              0,
-		lineStarts:       make([]int, 0),
+		lineStarts:       []int{0},
 		ignoreWhitespace: ignoreWhitespace,
 	}
 }
@@ -33,6 +33,10 @@ func (l *lexer) read() (r rune, size int, err error) {
 	r, size = utf8.DecodeRune(current)
 
 	l.pos += size
+
+	if r == '\n' {
+		l.lineStarts = append(l.lineStarts, l.pos)
+	}
 	return r, size, nil
 }
 
@@ -40,6 +44,11 @@ func (l *lexer) unread(size int) error {
 	if size < 0 || size > l.pos {
 		return fmt.Errorf("invalid size: %d", size)
 	}
+
+	if len(l.lineStarts) > 1 && l.pos == l.lineStarts[len(l.lineStarts)-1] {
+		l.lineStarts = l.lineStarts[:len(l.lineStarts)-1]
+	}
+
 	l.pos -= size
 	return nil
 }

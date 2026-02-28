@@ -670,7 +670,7 @@ func TestLexer_next(t *testing.T) {
 		{
 			name:    "unterminatedString",
 			input:   `"unterminated`,
-			wantErr: "unterminated string literal",
+			wantErr: "line 1:1: unterminated string literal",
 		},
 		{
 			name:  "emptyInput",
@@ -859,6 +859,169 @@ func TestLexer_readString(t *testing.T) {
 
 			if got != tc.want {
 				t.Errorf("wanted %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestLexer_next_TokenPositions(t *testing.T) {
+	t.Parallel()
+
+	type expectedToken struct {
+		Type   TokenType
+		Lexeme string
+		Line   int
+		Column int
+	}
+
+	testCases := []struct {
+		name             string
+		input            string
+		ignoreWhitespace bool
+		want             []expectedToken
+	}{
+		{
+			name:             "singleLineTokens",
+			input:            `"key""value"`,
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "key", 1, 1},
+				{STRING, "value", 1, 6},
+				{EOF, "", 1, 13},
+			},
+		},
+		{
+			name:             "multiLineTokens",
+			input:            "\"root\"\n{\n\"key\"\n}",
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "root", 1, 1},
+				{LBRACE, "{", 2, 1},
+				{STRING, "key", 3, 1},
+				{RBRACE, "}", 4, 1},
+				{EOF, "", 4, 2},
+			},
+		},
+		{
+			name: "multiLineWithIndentation",
+			input: `"root"
+{
+	"key" "value"
+}`,
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "root", 1, 1},
+				{LBRACE, "{", 2, 1},
+				{STRING, "key", 3, 2},
+				{STRING, "value", 3, 8},
+				{RBRACE, "}", 4, 1},
+				{EOF, "", 4, 2},
+			},
+		},
+		{
+			name:             "whitespaceTokensIncluded",
+			input:            "\"a\" \"b\"",
+			ignoreWhitespace: false,
+			want: []expectedToken{
+				{STRING, "a", 1, 1},
+				{WHITESPACE, " ", 1, 4},
+				{STRING, "b", 1, 5},
+				{EOF, "", 1, 8},
+			},
+		},
+		{
+			name:             "newlineAsWhitespace",
+			input:            "\"a\"\n\"b\"",
+			ignoreWhitespace: false,
+			want: []expectedToken{
+				{STRING, "a", 1, 1},
+				{WHITESPACE, "\n", 1, 4},
+				{STRING, "b", 2, 1},
+				{EOF, "", 2, 4},
+			},
+		},
+		{
+			name:             "commentsSkipped",
+			input:            "// comment\n\"key\"",
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "key", 2, 1},
+				{EOF, "", 2, 6},
+			},
+		},
+		{
+			name:             "tokensAfterMultipleComments",
+			input:            "// first\n// second\n\"key\"",
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "key", 3, 1},
+				{EOF, "", 3, 6},
+			},
+		},
+		{
+			name:             "bracesOnSameLine",
+			input:            "{}",
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{LBRACE, "{", 1, 1},
+				{RBRACE, "}", 1, 2},
+				{EOF, "", 1, 3},
+			},
+		},
+		{
+			name:             "emptyInput",
+			input:            "",
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{EOF, "", 1, 1},
+			},
+		},
+		{
+			name: "complexVDF",
+			input: `"root"
+{
+	"nested"
+	{
+		"key" "value"
+	}
+}`,
+			ignoreWhitespace: true,
+			want: []expectedToken{
+				{STRING, "root", 1, 1},
+				{LBRACE, "{", 2, 1},
+				{STRING, "nested", 3, 2},
+				{LBRACE, "{", 4, 2},
+				{STRING, "key", 5, 3},
+				{STRING, "value", 5, 9},
+				{RBRACE, "}", 6, 2},
+				{RBRACE, "}", 7, 1},
+				{EOF, "", 7, 2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), tc.ignoreWhitespace)
+
+			for i, expected := range tc.want {
+				token, err := lexer.next()
+				if err != nil {
+					t.Fatalf("token %d: next(): %v", i, err)
+				}
+
+				if token.Type != expected.Type {
+					t.Errorf("token %d: wanted type %v, got %v", i, expected.Type, token.Type)
+				}
+				if token.Lexeme != expected.Lexeme {
+					t.Errorf("token %d: wanted lexeme %q, got %q", i, expected.Lexeme, token.Lexeme)
+				}
+				if token.Line != expected.Line {
+					t.Errorf("token %d (%q): wanted line %d, got %d", i, token.Lexeme, expected.Line, token.Line)
+				}
+				if token.Column != expected.Column {
+					t.Errorf("token %d (%q): wanted column %d, got %d", i, token.Lexeme, expected.Column, token.Column)
+				}
 			}
 		})
 	}
