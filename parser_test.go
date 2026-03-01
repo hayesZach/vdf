@@ -1,6 +1,7 @@
 package vdf
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -12,7 +13,11 @@ func TestParser_Parse_SimpleKeyValue(t *testing.T) {
 	"key" "value"
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+	kv, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("Parse(): %v", err)
 	}
@@ -49,7 +54,12 @@ func TestParser_Parse_DuplicateKeys(t *testing.T) {
 	"duplicate" "value3"
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("Parse(): %v", err)
 	}
@@ -91,7 +101,12 @@ func TestParser_Parse_NestedKeyValues(t *testing.T) {
 	}
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("Parse(): %v", err)
 	}
@@ -152,7 +167,12 @@ func TestParser_Parse_DeeplyNestedKeyValues(t *testing.T) {
 	}
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("Parse(): %v", err)
 	}
@@ -235,9 +255,13 @@ func TestParser_Parse_UnquotedIdentifiers(t *testing.T) {
 	key value
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
@@ -272,9 +296,13 @@ func TestParser_Parse_MixedQuotedAndUnquoted(t *testing.T) {
 	}
 	`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
@@ -319,9 +347,14 @@ func TestParser_Parse_MixedQuotedAndUnquotedWithWhitespace(t *testing.T) {
 		key2 "value 2"
 	}`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
@@ -358,9 +391,13 @@ func TestParser_Parse_EmptyObject(t *testing.T) {
 	{
 	}`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
@@ -386,13 +423,18 @@ func TestParser_Parse_WhitespaceHandling(t *testing.T) {
 	
 	 "key1"		"value1"
 	
-		"key2"  "value2"
+		 "key2"  "value2"
 	
 }`
 
-	kv, err := Parse([]byte(testString))
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
@@ -432,9 +474,14 @@ func TestParser_Parse_EscapeSequences(t *testing.T) {
 		"key\t3" "value\t3"
 	}`
 
-	kv, err := ParseWithOptions([]byte(testString), false /* ignoreWhitespace */, true /* usesEscapeSequences */)
+	parser, err := NewParser(bytes.NewReader([]byte(testString)), UseEscapeSequences())
 	if err != nil {
-		t.Fatalf("Parse(): = %v", err)
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
 	}
 
 	if kv.Key != "root" {
