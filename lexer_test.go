@@ -35,7 +35,7 @@ func TestLexer_read(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
 			result := make([]rune, 0)
 			for {
@@ -74,7 +74,7 @@ func TestLexer_unread(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
 			_, size, err := lexer.read()
 			if err != nil {
@@ -113,7 +113,7 @@ func TestLexer_unread_EmptyString(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
 			if err := lexer.unread(1); err == nil {
 				t.Fatal("unread() succeeded, wanted error")
@@ -221,7 +221,7 @@ func TestLexer_skipComments(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
 			err := lexer.skipComments()
 			if tc.wantErr {
@@ -242,250 +242,62 @@ func TestLexer_skipComments(t *testing.T) {
 	}
 }
 
-func TestLexer_peekN(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name    string
-		input   string
-		n       int
-		want    rune
-		wantErr bool
-	}{
-		{
-			name:  "peekOneRune",
-			input: "test",
-			n:     1,
-			want:  't',
-		},
-		{
-			name:  "peekMultipleRunes",
-			input: "test",
-			n:     3,
-			want:  's',
-		},
-		{
-			name:  "simpleString",
-			input: `"root"`,
-			n:     2,
-			want:  'r',
-		},
-		{
-			name:  "peekLBrace",
-			input: `{`,
-			n:     1,
-			want:  '{',
-		},
-		{
-			name:  "peekRBrace",
-			input: `}`,
-			n:     1,
-			want:  '}',
-		},
-		{
-			name:  "peekEscape",
-			input: `\n`,
-			n:     1,
-			want:  '\\',
-		},
-		{
-			name:  "peekWhitespace",
-			input: " test",
-			n:     1,
-			want:  ' ',
-		},
-		{
-			name:  "peekTab",
-			input: "\tvalue",
-			n:     1,
-			want:  '\t',
-		},
-		{
-			name:  "peekNewline",
-			input: "\nvalue",
-			n:     1,
-			want:  '\n',
-		},
-		{
-			name:  "peekIdentifier",
-			input: "abc",
-			n:     1,
-			want:  'a',
-		},
-		{
-			name:  "peekDigit",
-			input: "123",
-			n:     1,
-			want:  '1',
-		},
-		{
-			name:  "peekSpecialChar",
-			input: "@test",
-			n:     1,
-			want:  '@',
-		},
-		{
-			name:    "peekBeyondInput",
-			input:   "test",
-			n:       5,
-			want:    0,
-			wantErr: true,
-		},
-		{
-			name:    "peekFurther",
-			input:   "test",
-			n:       7,
-			want:    0,
-			wantErr: true,
-		},
-		{
-			name:    "emptyInput",
-			input:   "",
-			n:       1,
-			want:    0,
-			wantErr: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false)
-
-			r, err := lexer.peekN(tc.n)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("peekN() succeeded, wanted error")
-				}
-				if r != tc.want {
-					t.Errorf("wanted rune %v, got %v", tc.want, r)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("peekN(): %v", err)
-			}
-
-			if r != tc.want {
-				t.Fatalf("wanted rune %v, got %v", tc.want, r)
-			}
-		})
-	}
-}
-
-func TestLexer_peekN_DoesNotConsume(t *testing.T) {
-	t.Parallel()
-
-	input := `"root"`
-	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
-
-	expectedRune := '"'
-
-	for i := 0; i < 3; i++ {
-		r, err := lexer.peekN(1)
-		if err != nil {
-			t.Fatalf("peekN(): %v", err)
-		}
-		if r != expectedRune {
-			t.Errorf("got rune %v, wanted %v", r, expectedRune)
-		}
-	}
-
-	r, _, err := lexer.read()
-	if err != nil {
-		t.Fatalf("read(): %v", err)
-	}
-	if r != expectedRune {
-		t.Errorf("got rune %v, wanted %v", r, expectedRune)
-	}
-}
-
 func TestLexer_peek(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name    string
-		input   string
-		want    rune
-		wantErr bool
+		name     string
+		input    string
+		wantType TokenType
 	}{
 		{
-			name:  "simpleString",
-			input: `"root"`,
-			want:  '"',
+			name:     "simpleString",
+			input:    `"root"`,
+			wantType: STRING,
 		},
 		{
-			name:  "peekLBrace",
-			input: `{`,
-			want:  '{',
+			name:     "peekLBrace",
+			input:    `{`,
+			wantType: LBRACE,
 		},
 		{
-			name:  "peekRBrace",
-			input: `}`,
-			want:  '}',
+			name:     "peekRBrace",
+			input:    `}`,
+			wantType: RBRACE,
 		},
 		{
-			name:  "peekEscape",
-			input: `\n`,
-			want:  '\\',
+			name:     "peekEscape",
+			input:    `\n`,
+			wantType: ESCAPE,
 		},
 		{
-			name:  "peekWhitespace",
-			input: " test",
-			want:  ' ',
+			name:     "peekWhitespace",
+			input:    " test",
+			wantType: WHITESPACE,
 		},
 		{
-			name:  "peekTab",
-			input: "\tvalue",
-			want:  '\t',
+			name:     "peekIdentifier",
+			input:    "abc",
+			wantType: IDENTIFIER,
 		},
 		{
-			name:  "peekNewline",
-			input: "\nvalue",
-			want:  '\n',
-		},
-		{
-			name:  "peekIdentifier",
-			input: "abc",
-			want:  'a',
-		},
-		{
-			name:  "peekDigit",
-			input: "123",
-			want:  '1',
-		},
-		{
-			name:  "peekSpecialChar",
-			input: "@test",
-			want:  '@',
-		},
-		{
-			name:    "emptyInput",
-			input:   "",
-			want:    0,
-			wantErr: true,
+			name:     "emptyInput",
+			input:    "",
+			wantType: EOF,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
-			r, err := lexer.peek()
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("peek() succeeded, wanted error")
-				}
-				if r != tc.want {
-					t.Errorf("got rune %v, wanted %v", r, tc.want)
-				}
-				return
-			}
+			token, err := lexer.peek()
 			if err != nil {
 				t.Fatalf("peek(): %v", err)
 			}
 
-			if r != tc.want {
-				t.Errorf("got rune %v, wanted %v", r, tc.want)
+			if token.Type != tc.wantType {
+				t.Errorf("got type %v, wanted %v", token.Type, tc.wantType)
 			}
 		})
 	}
@@ -495,27 +307,27 @@ func TestLexer_peek_DoesNotConsume(t *testing.T) {
 	t.Parallel()
 
 	input := `"root"`
-	lexer := newLexer([]byte(input), false /* ignoreWhitespace */)
+	lexer := newLexer([]byte(input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
-	expectedRune := '"'
+	expectedType := STRING
 
-	// Peek multiple times to ensure that the rune is not consumed
+	// Peek multiple times to ensure that the token is not consumed
 	for i := 0; i < 3; i++ {
-		r, err := lexer.peek()
+		token, err := lexer.peek()
 		if err != nil {
 			t.Fatalf("peek(): %v", err)
 		}
-		if r != expectedRune {
-			t.Errorf("got rune %v, wanted %v", r, expectedRune)
+		if token.Type != expectedType {
+			t.Errorf("got type %v, wanted %v", token.Type, expectedType)
 		}
 	}
 
-	firstRune, _, err := lexer.read()
+	token, err := lexer.next()
 	if err != nil {
-		t.Fatalf("read(): %v", err)
+		t.Fatalf("next(): %v", err)
 	}
-	if firstRune != expectedRune {
-		t.Errorf("got rune %v, wanted %v", firstRune, expectedRune)
+	if token.Type != expectedType {
+		t.Errorf("got type %v, wanted %v", token.Type, expectedType)
 	}
 }
 
@@ -523,10 +335,11 @@ func TestLexer_next(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name    string
-		input   string
-		want    []TokenType
-		wantErr string
+		name                string
+		input               string
+		usesEscapeSequences bool
+		want                []TokenType
+		wantErr             string
 	}{
 		{
 			name:  "simpleString",
@@ -635,8 +448,9 @@ func TestLexer_next(t *testing.T) {
 			},
 		},
 		{
-			name:  "escapeSequences",
-			input: `"text\"with\"escapes"`,
+			name:                "escapeSequences",
+			input:               `"text\"with\"escapes"`,
+			usesEscapeSequences: true,
 			want: []TokenType{
 				STRING,
 				EOF,
@@ -681,7 +495,7 @@ func TestLexer_next(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, tc.usesEscapeSequences)
 
 			result := make([]TokenType, 0)
 			for {
@@ -743,7 +557,7 @@ func TestLexer_next_IgnoreWhitespace(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), true /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), true /* ignoreWhitespace */, false /* usesEscapeSequences */)
 
 			result := make([]TokenType, 0)
 			for {
@@ -769,79 +583,99 @@ func TestLexer_readString(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr string
+		name                string
+		input               string
+		usesEscapeSequences bool
+		want                string
+		wantErr             string
 	}{
 		{
-			name:  "simpleString",
-			input: `root"`,
-			want:  "root",
+			name:                "simpleString",
+			input:               `root"`,
+			usesEscapeSequences: false,
+			want:                "root",
 		},
 		{
-			name:  "escapedString",
-			input: `text\"with\"escapes"`,
-			want:  "text\"with\"escapes",
+			name:                "escapedString",
+			input:               `text\"with\"escapes"`,
+			usesEscapeSequences: true,
+			want:                "text\"with\"escapes",
 		},
 		{
-			name:  "escapedStringWithNewline",
-			input: `text\nwith\nescapes"`,
-			want:  "text\nwith\nescapes",
+			name:                "escapedStringWithNewline",
+			input:               `text\nwith\nescapes"`,
+			usesEscapeSequences: true,
+			want:                "text\nwith\nescapes",
 		},
 		{
-			name:  "escapedStringWithTab",
-			input: `text\twith\tescapes"`,
-			want:  "text\twith\tescapes",
+			name:                "escapedStringWithTab",
+			input:               `text\twith\tescapes"`,
+			usesEscapeSequences: true,
+			want:                "text\twith\tescapes",
 		},
 		{
-			name:  "escapedStringWithBackslash",
-			input: `text\\with\\escapes"`,
-			want:  "text\\with\\escapes",
+			name:                "escapedStringWithBackslash",
+			input:               `text\\with\\escapes"`,
+			usesEscapeSequences: true,
+			want:                "text\\with\\escapes",
 		},
 		{
-			name:  "escapedStringWithCarriageReturn",
-			input: `text\rwith\rescapes"`,
-			want:  "text\rwith\rescapes",
+			name:                "escapedStringWithCarriageReturn",
+			input:               `text\rwith\rescapes"`,
+			usesEscapeSequences: true,
+			want:                "text\rwith\rescapes",
 		},
 		{
-			name:  "escapedStringWithBackslashAndDoubleQuote",
-			input: `text\\\"with\\\"escapes"`,
-			want:  "text\\\"with\\\"escapes",
+			name:                "escapedStringWithBackslashAndDoubleQuote",
+			input:               `text\\\"with\\\"escapes"`,
+			usesEscapeSequences: true,
+			want:                "text\\\"with\\\"escapes",
 		},
 		{
-			name:  "escapedStringWithBackslashAndNewline",
-			input: `text\\\nwith\\\nescapes"`,
-			want:  "text\\\nwith\\\nescapes",
+			name:                "escapedStringWithBackslashAndNewline",
+			input:               `text\\\nwith\\\nescapes"`,
+			usesEscapeSequences: true,
+			want:                "text\\\nwith\\\nescapes",
 		},
 		{
-			name:  "escapedStringWithBackslashAndTab",
-			input: `text\\\twith\\\tescapes"`,
-			want:  "text\\\twith\\\tescapes",
+			name:                "escapedStringWithBackslashAndTab",
+			input:               `text\\\twith\\\tescapes"`,
+			usesEscapeSequences: true,
+			want:                "text\\\twith\\\tescapes",
 		},
 		{
-			name:    "unterminatedString",
-			input:   `unterminated`,
-			want:    "",
-			wantErr: "unterminated string literal",
+			name:                "unterminatedString",
+			input:               `unterminated`,
+			usesEscapeSequences: false,
+			want:                "",
+			wantErr:             "unterminated string literal",
 		},
 		{
-			name:    "incompleteEscapeSequence",
-			input:   `text\`,
-			want:    "",
-			wantErr: "unterminated string literal",
+			name:                "incompleteEscapeSequence",
+			input:               `text\`,
+			usesEscapeSequences: true,
+			want:                "",
+			wantErr:             "unterminated string literal",
 		},
 		{
-			name:    "invalidEscapeSequence",
-			input:   `text\xwith\xescapes"`,
-			want:    "",
-			wantErr: "invalid escape sequence: x",
+			name:                "invalidEscapeSequence",
+			input:               `text\xwith\xescapes"`,
+			usesEscapeSequences: true,
+			want:                "",
+			wantErr:             "invalid escape sequence: x",
+		},
+		{
+			name:                "escapeSequencesNotAllowed",
+			input:               `text\with\escapes"`,
+			usesEscapeSequences: false,
+			want:                "",
+			wantErr:             "escape sequence not allowed",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, tc.usesEscapeSequences)
 
 			got, err := lexer.readString()
 			if tc.wantErr != "" {
@@ -1002,7 +836,7 @@ func TestLexer_next_TokenPositions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), tc.ignoreWhitespace)
+			lexer := newLexer([]byte(tc.input), tc.ignoreWhitespace, false /* usesEscapeSequences */)
 
 			for i, expected := range tc.want {
 				token, err := lexer.next()
@@ -1138,7 +972,7 @@ func TestLexer_calcLineAndColumn(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */)
+			lexer := newLexer([]byte(tc.input), false /* ignoreWhitespace */, false /* usesEscapeSequences */)
 			lexer.lineStarts = tc.lineStarts
 			lexer.pos = tc.pos
 			line, col := lexer.calcLineAndColumn()

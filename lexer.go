@@ -13,15 +13,19 @@ type lexer struct {
 	pos        int
 	lineStarts []int
 
-	ignoreWhitespace bool
+	ignoreWhitespace    bool
+	usesEscapeSequences bool
+
+	peekedToken *Token
 }
 
-func newLexer(data []byte, ignoreWhitespace bool) *lexer {
+func newLexer(data []byte, ignoreWhitespace bool, usesEscapeSequences bool) *lexer {
 	return &lexer{
-		input:            data,
-		pos:              0,
-		lineStarts:       []int{0},
-		ignoreWhitespace: ignoreWhitespace,
+		input:               data,
+		pos:                 0,
+		lineStarts:          []int{0},
+		ignoreWhitespace:    ignoreWhitespace,
+		usesEscapeSequences: usesEscapeSequences,
 	}
 }
 
@@ -77,6 +81,7 @@ func (l *lexer) calcLineAndColumn() (line int, col int) {
 }
 
 func (l *lexer) skipWhitespace() error {
+	l.peekedToken = nil
 	for {
 		r, size, err := l.read()
 		if err != nil {
@@ -94,6 +99,7 @@ func (l *lexer) skipWhitespace() error {
 }
 
 func (l *lexer) skipComments() error {
+	l.peekedToken = nil
 	for {
 		r, size, err := l.read()
 		if err != nil {
@@ -144,40 +150,27 @@ func (l *lexer) skipComments() error {
 	}
 }
 
-func (l *lexer) peek() (rune, error) {
-	if l.pos >= len(l.input) {
-		return 0, io.EOF
-	}
-	r, _ := utf8.DecodeRune(l.input[l.pos:])
-	return r, nil
-}
-
-func (l *lexer) peekN(n int) (rune, error) {
-	checkBounds := func(index int) error {
-		if index >= len(l.input) {
-			return io.EOF
-		}
-		return nil
-	}
-	if err := checkBounds(l.pos); err != nil {
-		return 0, err
+func (l *lexer) peek() (*Token, error) {
+	if l.peekedToken != nil {
+		return l.peekedToken, nil
 	}
 
-	var r rune
-	pos := l.pos
-	for i := 0; i < n; i++ {
-		if err := checkBounds(pos); err != nil {
-			return 0, err
-		}
-
-		var size int
-		r, size = utf8.DecodeRune(l.input[pos:])
-		pos += size
+	token, err := l.next()
+	if err != nil {
+		return nil, err
 	}
-	return r, nil
+
+	l.peekedToken = token
+	return token, nil
 }
 
 func (l *lexer) next() (*Token, error) {
+	if l.peekedToken != nil {
+		token := l.peekedToken
+		l.peekedToken = nil
+		return token, nil
+	}
+
 	for {
 		startPos := l.pos
 
@@ -243,6 +236,10 @@ func (l *lexer) readString() (string, error) {
 		}
 
 		if r == '\\' {
+			if !l.usesEscapeSequences {
+				return "", fmt.Errorf("escape sequence not allowed")
+			}
+
 			// Handle escape sequences
 			next, _, err := l.read()
 			if err != nil {
