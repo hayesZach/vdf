@@ -62,6 +62,8 @@ func (t TokenType) String() string {
 type Token struct {
 	Type   TokenType
 	Lexeme string
+	Line   int
+	Column int
 }
 
 func isWhitespace(ch rune) bool {
@@ -84,10 +86,12 @@ func isIdentifier(ch rune) bool {
 	return !isControlCharacter(ch)
 }
 
-func NewToken(ch rune) *Token {
+func NewToken(ch rune, line, col int) *Token {
 	token := &Token{
 		Type:   ILLEGAL,
 		Lexeme: string(ch),
+		Line:   line,
+		Column: col,
 	}
 
 	if isWhitespace(ch) {
@@ -106,16 +110,20 @@ func NewToken(ch rune) *Token {
 	return token
 }
 
-func NewStringToken(value string) *Token {
+func NewStringToken(value string, line, col int) *Token {
 	return &Token{
 		Type:   STRING,
 		Lexeme: value,
+		Line:   line,
+		Column: col,
 	}
 }
 
-func NewEOFToken() *Token {
+func NewEOFToken(line, col int) *Token {
 	return &Token{
 		Type:   EOF,
 		Lexeme: "",
+		Line:   line,
+		Column: col,
 	}
 }
