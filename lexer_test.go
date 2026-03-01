@@ -670,7 +670,7 @@ func TestLexer_next(t *testing.T) {
 		{
 			name:    "unterminatedString",
 			input:   `"unterminated`,
-			wantErr: "line 1:1: unterminated string literal",
+			wantErr: "syntax error at 1:1: unterminated string literal",
 		},
 		{
 			name:  "emptyInput",

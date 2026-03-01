@@ -219,7 +219,11 @@ func (l *lexer) next() (*Token, error) {
 	if r == '"' {
 		value, err := l.readString()
 		if err != nil {
-			return nil, fmt.Errorf("line %d:%d: %w", line, col, err)
+			return nil, &SyntaxError{
+				Line:    line,
+				Column:  col,
+				Message: err.Error(),
+			}
 		}
 		return NewStringToken(value, line, col), nil
 	}
