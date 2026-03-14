@@ -1,27 +1,31 @@
 package vdf
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
 )
 
 type options struct {
+	ignoreWhitespace    bool
 	usesEscapeSequences bool
 }
 
 type Option func(*options)
 
-func WithEscapeSequences() Option {
+func IgnoreWhitespace() Option {
+	return func(o *options) {
+		o.ignoreWhitespace = true
+	}
+}
+
+func UseEscapeSequences() Option {
 	return func(o *options) {
 		o.usesEscapeSequences = true
 	}
 }
 
 type Parser struct {
-	lexer               *lexer
-	usesEscapeSequences bool
+	lexer *lexer
 }
 
 func NewParser(r io.Reader, opts ...Option) (*Parser, error) {
@@ -36,26 +40,12 @@ func NewParser(r io.Reader, opts ...Option) (*Parser, error) {
 	}
 
 	return &Parser{
-		lexer:               newLexer(data, o.usesEscapeSequences),
-		usesEscapeSequences: o.usesEscapeSequences,
+		lexer: newLexer(data, o.ignoreWhitespace, o.usesEscapeSequences),
 	}, nil
 }
 
 func (p *Parser) Parse() (*KeyValue, error) {
 	return p.parse()
-}
-
-func Parse(b []byte, opts ...Option) (*KeyValue, error) {
-	parser, err := NewParser(bytes.NewReader(b), opts...)
-	if err != nil {
-		return nil, err
-	}
-	return parser.Parse()
-}
-
-func (p *Parser) parseStringValue(token *Token) (string, error) {
-	isQuoted := token.Type == DOUBLEQUOTE
-	return p.parseToken(isQuoted)
 }
 
 func (p *Parser) parse() (*KeyValue, error) {
@@ -71,14 +61,20 @@ func (p *Parser) parse() (*KeyValue, error) {
 		return nil, err
 	}
 
-	if token.Type == EOF {
+	switch token.Type {
+	case EOF:
 		return root, nil
-	} else if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
-		key, err := p.parseStringValue(token)
+	case STRING:
+		root.Key = token.Lexeme
+		p.lexer.next()
+	case IDENTIFIER:
+		key, err := p.parseUnquotedIdentifier()
 		if err != nil {
 			return nil, err
 		}
 		root.Key = key
+	default:
+		return nil, fmt.Errorf("invalid token type %q for root key", token.Type.String())
 	}
 
 	// Ignore whitespace after parsing key
@@ -97,10 +93,6 @@ func (p *Parser) parse() (*KeyValue, error) {
 }
 
 func (p *Parser) parseObject() ([]*KeyValue, error) {
-	if err := p.lexer.skipWhitespace(); err != nil {
-		return nil, err
-	}
-
 	token, err := p.lexer.next()
 	if err != nil {
 		return nil, err
@@ -111,81 +103,72 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 	}
 
 	subKeyValues := make([]*KeyValue, 0)
-
 	for {
-		token, err = p.lexer.peek()
-		if err != nil {
-			return nil, err
-		}
-
-		if token.Type == WHITESPACE {
-			if err := p.lexer.skipWhitespace(); err != nil {
-				return nil, err
-			}
-			token, _ = p.lexer.peek()
-		}
-
-		if token.Type == EOF {
-			return nil, errors.New("unexpected EOF")
-		}
-
-		if token.Type == RBRACE {
-			// Finished parsing object -- consume the closing brace
-			if _, err := p.lexer.next(); err != nil {
-				return nil, err
-			}
-			break
-		}
-
-		kv := &KeyValue{}
-
-		// Handle quoted and unquoted keys and values
-		if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
-			key, err := p.parseStringValue(token)
-			if err != nil {
-				return nil, err
-			}
-			kv.Key = key
-		}
-
-		// Skip whitespace after key
 		if err := p.lexer.skipWhitespace(); err != nil {
 			return nil, err
 		}
 
-		// Handle parsing value
 		token, err = p.lexer.peek()
 		if err != nil {
 			return nil, err
-			token, _ = p.lexer.peek()
 		}
 
-		if token.Type == LBRACE {
-			val, err := p.parseObject()
+		if token.Type == EOF {
+			return nil, fmt.Errorf("encountered unexpected EOF while parsing object")
+		} else if token.Type == RBRACE {
+			p.lexer.next()
+			break
+		}
+
+		kv := &KeyValue{}
+		switch token.Type {
+		case STRING:
+			kv.Key = token.Lexeme
+			p.lexer.next()
+		case IDENTIFIER:
+			key, err := p.parseUnquotedIdentifier()
 			if err != nil {
 				return nil, err
 			}
-			kv.Value = val
-		} else if token.Type == IDENTIFIER || token.Type == DOUBLEQUOTE {
-			value, err := p.parseStringValue(token)
+			kv.Key = key
+		default:
+			return nil, fmt.Errorf("invalid token %q, expected STRING or IDENTIFIER", token.Type.String())
+		}
+
+		if err := p.lexer.skipWhitespace(); err != nil {
+			return nil, err
+		}
+
+		token, err = p.lexer.peek()
+		if err != nil {
+			return nil, err
+		}
+
+		switch token.Type {
+		case STRING:
+			kv.Value = token.Lexeme
+			p.lexer.next()
+		case IDENTIFIER:
+			value, err := p.parseUnquotedIdentifier()
 			if err != nil {
 				return nil, err
 			}
 			kv.Value = value
+		case LBRACE:
+			obj, err := p.parseObject()
+			if err != nil {
+				return nil, err
+			}
+			kv.Value = obj
+		default:
+			return nil, fmt.Errorf("invalid token %q, expected STRING, IDENTIFIER, or LBRACE", token.Type.String())
 		}
 		subKeyValues = append(subKeyValues, kv)
 	}
 	return subKeyValues, nil
 }
 
-func (p *Parser) parseToken(isQuoted bool) (string, error) {
-	if isQuoted {
-		// Consume the opening double quote
-		if _, err := p.lexer.next(); err != nil {
-			return "", err
-		}
-	}
-
+func (p *Parser) parseUnquotedIdentifier() (string, error) {
 	var value string
 	for {
 		token, err := p.lexer.next()
@@ -193,57 +176,13 @@ func (p *Parser) parseToken(isQuoted bool) (string, error) {
 			return "", err
 		}
 
-		if isQuoted {
-			if token.Type == DOUBLEQUOTE {
-				// Finished consuming the token
-				break
-			} else if token.Type == IDENTIFIER || token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE {
-				value += token.Lexeme
-			} else if token.Type == ESCAPE {
-				if !p.usesEscapeSequences {
-					return "", errors.New("escape sequence not allowed")
-				}
-
-				val, err := p.parseEscapeSequence()
-				if err != nil {
-					return "", err
-				}
-				value += val
-			}
-		} else {
-			if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE || token.Type == DOUBLEQUOTE {
-				// Unquoted tokens end with whitespace or any control character
-				break
-			} else if token.Type != IDENTIFIER {
-				return "", fmt.Errorf("invalid token type %q for unquoted identifier", token.Type.String())
-			}
+		if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE {
+			break
+		} else if token.Type == IDENTIFIER {
 			value += token.Lexeme
+		} else {
+			return "", fmt.Errorf("invalid token type %q for unquoted identifier", token.Type.String())
 		}
 	}
 	return value, nil
-}
-
-// Escape sequences must be \\, \", \n, or \t
-func (p *Parser) parseEscapeSequence() (string, error) {
-	token, err := p.lexer.next()
-	if err != nil {
-		return "", err
-	}
-
-	switch token.Type {
-	case ESCAPE:
-		return "\\", nil
-	case DOUBLEQUOTE:
-		return "\"", nil
-	case IDENTIFIER:
-		if token.Lexeme == "n" {
-			return "\n", nil
-		} else if token.Lexeme == "t" {
-			return "\t", nil
-		}
-		fallthrough
-	default:
-		return "", fmt.Errorf("invalid escape sequence %q with value %q", token.Type.String(), token.Lexeme)
-	}
-
 }
