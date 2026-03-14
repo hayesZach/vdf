@@ -8,23 +8,18 @@ import (
 )
 
 type lexer struct {
-	input []byte
-
-	pos        int
-	lineStarts []int
-
-	ignoreWhitespace    bool
+	input               []byte
+	pos                 int
+	lineStarts          []int
 	usesEscapeSequences bool
-
-	peekedToken *Token
+	peekedToken         *Token
 }
 
-func newLexer(data []byte, ignoreWhitespace bool, usesEscapeSequences bool) *lexer {
+func newLexer(data []byte, usesEscapeSequences bool) *lexer {
 	return &lexer{
 		input:               data,
 		pos:                 0,
 		lineStarts:          []int{0},
-		ignoreWhitespace:    ignoreWhitespace,
 		usesEscapeSequences: usesEscapeSequences,
 	}
 }
@@ -174,17 +169,6 @@ func (l *lexer) next() (*Token, error) {
 	for {
 		startPos := l.pos
 
-		if l.ignoreWhitespace {
-			if err := l.skipWhitespace(); err != nil {
-				if err == io.EOF {
-					line, col := l.calcLineAndColumn()
-					return NewEOFToken(line, col), nil
-				}
-				return nil, err
-			}
-		}
-
-		// Always skip comments
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
 				line, col := l.calcLineAndColumn()
