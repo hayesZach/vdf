@@ -13,19 +13,17 @@ type lexer struct {
 	pos        int
 	lineStarts []int
 
-	ignoreWhitespace    bool
-	usesEscapeSequences bool
+	useEscapeSequences bool
 
 	peekedToken *Token
 }
 
-func newLexer(data []byte, ignoreWhitespace bool, usesEscapeSequences bool) *lexer {
+func newLexer(data []byte, useEscapeSequences bool) *lexer {
 	return &lexer{
-		input:               data,
-		pos:                 0,
-		lineStarts:          []int{0},
-		ignoreWhitespace:    ignoreWhitespace,
-		usesEscapeSequences: usesEscapeSequences,
+		input:              data,
+		pos:                0,
+		lineStarts:         []int{0},
+		useEscapeSequences: useEscapeSequences,
 	}
 }
 
@@ -83,19 +81,30 @@ func (l *lexer) calcLineAndColumn() (line int, col int) {
 func (l *lexer) skipWhitespace() error {
 	l.peekedToken = nil
 	for {
-		r, size, err := l.read()
-		if err != nil {
-			return err
-		}
-		if isWhitespace(r) {
-			continue
+		startPos := l.pos
+
+		for {
+			r, size, err := l.read()
+			if err != nil {
+				return err
+			}
+			if !isWhitespace(r) {
+				if err := l.unread(size); err != nil {
+					return err
+				}
+				break
+			}
 		}
 
-		if err := l.unread(size); err != nil {
+		if err := l.skipComments(); err != nil {
 			return err
 		}
-		return nil
+
+		if startPos == l.pos {
+			break
+		}
 	}
+	return nil
 }
 
 func (l *lexer) skipComments() error {
@@ -131,11 +140,10 @@ func (l *lexer) skipComments() error {
 			return nil
 		}
 
-		// Line comments and block comments end with a newline
+		// Consume comment until newline is encountered
 		for {
 			r, _, err := l.read()
 			if err == io.EOF {
-				// Comment ended at EOF
 				return nil
 			}
 			if err != nil {
@@ -143,7 +151,6 @@ func (l *lexer) skipComments() error {
 			}
 
 			if r == '\n' {
-				// Newline found, end of current comment
 				break
 			}
 		}
@@ -153,6 +160,22 @@ func (l *lexer) skipComments() error {
 func (l *lexer) peek() (*Token, error) {
 	if l.peekedToken != nil {
 		return l.peekedToken, nil
+	}
+
+	for {
+		startPos := l.pos
+
+		if err := l.skipComments(); err != nil {
+			if err == io.EOF {
+				line, col := l.calcLineAndColumn()
+				return NewEOFToken(line, col), nil
+			}
+			return nil, err
+		}
+
+		if startPos == l.pos {
+			break
+		}
 	}
 
 	token, err := l.next()
@@ -174,17 +197,6 @@ func (l *lexer) next() (*Token, error) {
 	for {
 		startPos := l.pos
 
-		if l.ignoreWhitespace {
-			if err := l.skipWhitespace(); err != nil {
-				if err == io.EOF {
-					line, col := l.calcLineAndColumn()
-					return NewEOFToken(line, col), nil
-				}
-				return nil, err
-			}
-		}
-
-		// Always skip comments
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
 				line, col := l.calcLineAndColumn()
@@ -236,7 +248,7 @@ func (l *lexer) readString() (string, error) {
 		}
 
 		if r == '\\' {
-			if !l.usesEscapeSequences {
+			if !l.useEscapeSequences {
 				return "", fmt.Errorf("escape sequence not allowed")
 			}
 

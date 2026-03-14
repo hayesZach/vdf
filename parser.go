@@ -12,12 +12,6 @@ type options struct {
 
 type Option func(*options)
 
-func IgnoreWhitespace() Option {
-	return func(o *options) {
-		o.ignoreWhitespace = true
-	}
-}
-
 func UseEscapeSequences() Option {
 	return func(o *options) {
 		o.usesEscapeSequences = true
@@ -40,7 +34,7 @@ func NewParser(r io.Reader, opts ...Option) (*Parser, error) {
 	}
 
 	return &Parser{
-		lexer: newLexer(data, o.ignoreWhitespace, o.usesEscapeSequences),
+		lexer: newLexer(data, o.usesEscapeSequences),
 	}, nil
 }
 
@@ -51,14 +45,16 @@ func (p *Parser) Parse() (*KeyValue, error) {
 func (p *Parser) parse() (*KeyValue, error) {
 	root := &KeyValue{}
 
-	// Ignore whitespace initially
-	if err := p.lexer.skipWhitespace(); err != nil {
-		return nil, err
-	}
-
 	token, err := p.lexer.peek()
 	if err != nil {
 		return nil, err
+	}
+
+	if token.Type == WHITESPACE {
+		if err := p.lexer.skipWhitespace(); err != nil {
+			return nil, err
+		}
+		token, _ = p.lexer.peek()
 	}
 
 	switch token.Type {
@@ -77,11 +73,6 @@ func (p *Parser) parse() (*KeyValue, error) {
 		return nil, fmt.Errorf("invalid token type %q for root key", token.Type.String())
 	}
 
-	// Ignore whitespace after parsing key
-	if err := p.lexer.skipWhitespace(); err != nil {
-		return nil, err
-	}
-
 	// Parse the value (should be a sub-object for root)
 	val, err := p.parseObject()
 	if err != nil {
@@ -98,19 +89,29 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 		return nil, err
 	}
 
+	if token.Type == WHITESPACE {
+		if err := p.lexer.skipWhitespace(); err != nil {
+			return nil, err
+		}
+		token, _ = p.lexer.next()
+	}
+
 	if token.Type != LBRACE {
 		return nil, fmt.Errorf("invalid token %q, expected LBRACE", token.Type.String())
 	}
 
 	subKeyValues := make([]*KeyValue, 0)
 	for {
-		if err := p.lexer.skipWhitespace(); err != nil {
-			return nil, err
-		}
-
 		token, err = p.lexer.peek()
 		if err != nil {
 			return nil, err
+		}
+
+		if token.Type == WHITESPACE {
+			if err := p.lexer.skipWhitespace(); err != nil {
+				return nil, err
+			}
+			token, _ = p.lexer.peek()
 		}
 
 		if token.Type == EOF {
@@ -135,13 +136,16 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 			return nil, fmt.Errorf("invalid token %q, expected STRING or IDENTIFIER", token.Type.String())
 		}
 
-		if err := p.lexer.skipWhitespace(); err != nil {
-			return nil, err
-		}
-
 		token, err = p.lexer.peek()
 		if err != nil {
 			return nil, err
+		}
+
+		if token.Type == WHITESPACE {
+			if err := p.lexer.skipWhitespace(); err != nil {
+				return nil, err
+			}
+			token, _ = p.lexer.peek()
 		}
 
 		switch token.Type {
@@ -171,7 +175,7 @@ func (p *Parser) parseObject() ([]*KeyValue, error) {
 func (p *Parser) parseUnquotedIdentifier() (string, error) {
 	var value string
 	for {
-		token, err := p.lexer.next()
+		token, err := p.lexer.peek()
 		if err != nil {
 			return "", err
 		}
@@ -180,6 +184,7 @@ func (p *Parser) parseUnquotedIdentifier() (string, error) {
 			break
 		} else if token.Type == IDENTIFIER {
 			value += token.Lexeme
+			p.lexer.next()
 		} else {
 			return "", fmt.Errorf("invalid token type %q for unquoted identifier", token.Type.String())
 		}

@@ -2,7 +2,11 @@ package vdf
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParser_Parse_SimpleKeyValue(t *testing.T) {
@@ -515,4 +519,621 @@ func TestParser_Parse_EscapeSequences(t *testing.T) {
 	if subValues[2].Value != "value\t3" {
 		t.Errorf("got value %q, expected %q", subValues[2].Value, "value\t3")
 	}
+}
+
+func TestParser_Parse_UnquotedIdentifierFollowedByBrace(t *testing.T) {
+	t.Parallel()
+
+	testString := `root{
+	"key" "value"
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	if kv.Key != "root" {
+		t.Errorf("got key %q, expected %q", kv.Key, "root")
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(subValues))
+	}
+
+	if subValues[0].Key != "key" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "key")
+	}
+	if subValues[0].Value != "value" {
+		t.Errorf("got value %q, expected %q", subValues[0].Value, "value")
+	}
+}
+
+func TestParser_Parse_Error_MissingClosingBrace(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	"key" "value"
+`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	_, err = parser.Parse()
+	if err == nil {
+		t.Fatal("Parse() succeeded, expected error for missing closing brace")
+	}
+
+	if err != io.EOF {
+		t.Errorf("got error %q, expected %q", err, io.EOF)
+	}
+}
+
+func TestParser_Parse_Error_MissingOpeningBrace(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+	"key" "value"
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	_, err = parser.Parse()
+	if err == nil {
+		t.Fatal("Parse() succeeded, expected error for missing opening brace")
+	}
+
+	wantErr := fmt.Sprintf("invalid token %q, expected LBRACE", STRING)
+	if err.Error() != wantErr {
+		t.Errorf("got error %q, expected %q", err, wantErr)
+	}
+}
+
+func TestParser_Parse_Error_InvalidTokenAtRoot(t *testing.T) {
+	t.Parallel()
+
+	testString := `{
+	"key" "value"
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	_, err = parser.Parse()
+	if err == nil {
+		t.Fatal("Parse() succeeded, expected error for invalid token at root")
+	}
+
+	wantErr := fmt.Sprintf("invalid token type %q for root key", LBRACE)
+	if err.Error() != wantErr {
+		t.Errorf("got error %q, expected %q", err, wantErr)
+	}
+}
+
+func TestParser_Parse_Error_InvalidTokenInObject(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	{ "nested" "value" }
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	_, err = parser.Parse()
+	if err == nil {
+		t.Fatal("Parse() succeeded, expected error for invalid token in object")
+	}
+
+	wantErr := fmt.Sprintf("invalid token %q, expected STRING or IDENTIFIER", LBRACE)
+	if err.Error() != wantErr {
+		t.Errorf("got error %q, expected %q", err, wantErr)
+	}
+}
+
+func TestParser_Parse_Error_UnterminatedString(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root
+{
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	_, err = parser.Parse()
+	if err == nil {
+		t.Fatal("Parse() succeeded, expected error for unterminated string")
+	}
+
+	wantErr := &SyntaxError{
+		Line:    1,
+		Column:  1,
+		Message: "unterminated string literal",
+	}
+
+	if diff := cmp.Diff(wantErr, err); diff != "" {
+		t.Error(diff)
+	}
+}
+
+func TestParser_Parse_Comments(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected *KeyValue
+	}{
+		{
+			name: "fullLineComments",
+			input: `// This is a comment
+					"root"
+					{
+						// Another comment
+						"key1" "value1"
+						/* block comment */
+						"key2" "value2"
+					}`,
+			expected: &KeyValue{
+				Key: "root",
+				Value: []*KeyValue{
+					{Key: "key1", Value: "value1"},
+					{Key: "key2", Value: "value2"},
+				},
+			},
+		},
+		{
+			name: "commentsAtEnd",
+			input: `// This is a comment
+					"root" // next comment
+					{
+						"key" "value" // another comment
+					} /* final comment`,
+			expected: &KeyValue{
+				Key: "root",
+				Value: []*KeyValue{
+					{Key: "key", Value: "value"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			parser, err := NewParser(bytes.NewReader([]byte(tc.input)))
+			if err != nil {
+				t.Fatalf("NewParser(): %v", err)
+			}
+
+			kv, err := parser.Parse()
+			if err != nil {
+				t.Fatalf("Parse(): %v", err)
+			}
+
+			if diff := cmp.Diff(tc.expected, kv); diff != "" {
+				t.Error(diff)
+			}
+		})
+	}
+}
+
+func TestParser_Parse_NestedObjectWithUnquotedKey(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	nested
+	{
+		"key" "value"
+	}
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(subValues))
+	}
+
+	if subValues[0].Key != "nested" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "nested")
+	}
+
+	nestedObj, ok := subValues[0].Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", subValues[0].Value)
+	}
+
+	if len(nestedObj) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(nestedObj))
+	}
+}
+
+func TestParser_Parse_MultipleRootSiblings(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	"sibling1"
+	{
+		"key1" "value1"
+	}
+	"sibling2"
+	{
+		"key2" "value2"
+	}
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 2 {
+		t.Fatalf("got %d sub-values, expected 2", len(subValues))
+	}
+
+	if subValues[0].Key != "sibling1" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "sibling1")
+	}
+	if subValues[1].Key != "sibling2" {
+		t.Errorf("got key %q, expected %q", subValues[1].Key, "sibling2")
+	}
+}
+
+func TestParser_Parse_SpecialCharactersInStrings(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	"key with spaces" "value with spaces"
+	"key{brace" "value}brace"
+	"key/slash" "value/slash"
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 3 {
+		t.Fatalf("got %d sub-values, expected 3", len(subValues))
+	}
+
+	if subValues[0].Key != "key with spaces" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "key with spaces")
+	}
+	if subValues[0].Value != "value with spaces" {
+		t.Errorf("got value %q, expected %q", subValues[0].Value, "value with spaces")
+	}
+	if subValues[1].Key != "key{brace" {
+		t.Errorf("got key %q, expected %q", subValues[1].Key, "key{brace")
+	}
+	if subValues[1].Value != "value}brace" {
+		t.Errorf("got value %q, expected %q", subValues[1].Value, "value}brace")
+	}
+}
+
+func TestParser_Parse_UnquotedValueFollowedByBrace(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	nested{
+		"key" "value"
+	}
+}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(subValues))
+	}
+
+	if subValues[0].Key != "nested" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "nested")
+	}
+
+	nestedObj, ok := subValues[0].Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", subValues[0].Value)
+	}
+
+	if len(nestedObj) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(nestedObj))
+	}
+}
+
+func TestParser_Parse_UnquotedValueFollowedByRBrace(t *testing.T) {
+	t.Parallel()
+
+	testString := `"root"
+{
+	"key" value}`
+
+	parser, err := NewParser(bytes.NewReader([]byte(testString)))
+	if err != nil {
+		t.Fatalf("NewParser(): %v", err)
+	}
+
+	kv, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("Parse(): %v", err)
+	}
+
+	subValues, ok := kv.Value.([]*KeyValue)
+	if !ok {
+		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+	}
+
+	if len(subValues) != 1 {
+		t.Fatalf("got %d sub-values, expected 1", len(subValues))
+	}
+
+	if subValues[0].Key != "key" {
+		t.Errorf("got key %q, expected %q", subValues[0].Key, "key")
+	}
+	if subValues[0].Value != "value" {
+		t.Errorf("got value %q, expected %q", subValues[0].Value, "value")
+	}
+}
+
+func TestNewParser_Options(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		opts []Option
+	}{
+		{
+			name: "emptyOptions",
+			opts: []Option{},
+		},
+		{
+			name: "useEscapeSequences",
+			opts: []Option{UseEscapeSequences()},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			parser, err := NewParser(bytes.NewReader(nil), tc.opts...)
+			if err != nil {
+				t.Fatalf("NewParser(): %v", err)
+			}
+
+			if parser == nil {
+				t.Fatalf("parser is nil")
+			}
+		})
+	}
+}
+
+func TestParser_parseUnquotedIdentifier(t *testing.T) {
+	t.Parallel()
+
+	t.Run("simple identifier", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `root
+{
+}`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		if kv.Key != "root" {
+			t.Errorf("got key %q, expected %q", kv.Key, "root")
+		}
+	})
+
+	t.Run("identifier with numbers", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `root123
+{
+}`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		if kv.Key != "root123" {
+			t.Errorf("got key %q, expected %q", kv.Key, "root123")
+		}
+	})
+
+	t.Run("identifier with underscores", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `root_key
+{
+}`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		if kv.Key != "root_key" {
+			t.Errorf("got key %q, expected %q", kv.Key, "root_key")
+		}
+	})
+}
+
+func TestParser_parseObject(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty object", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `"root" {}`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		subValues, ok := kv.Value.([]*KeyValue)
+		if !ok {
+			t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+		}
+
+		if len(subValues) != 0 {
+			t.Fatalf("got %d sub-values, expected 0", len(subValues))
+		}
+	})
+
+	t.Run("object with single string value", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `"root" { "key" "value" }`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		subValues, ok := kv.Value.([]*KeyValue)
+		if !ok {
+			t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+		}
+
+		if len(subValues) != 1 {
+			t.Fatalf("got %d sub-values, expected 1", len(subValues))
+		}
+
+		if subValues[0].Value != "value" {
+			t.Errorf("got value %q, expected %q", subValues[0].Value, "value")
+		}
+	})
+
+	t.Run("object with nested object value", func(t *testing.T) {
+		t.Parallel()
+
+		testString := `"root" { "nested" { "inner" "value" } }`
+		parser, err := NewParser(bytes.NewReader([]byte(testString)))
+		if err != nil {
+			t.Fatalf("NewParser(): %v", err)
+		}
+
+		kv, err := parser.Parse()
+		if err != nil {
+			t.Fatalf("Parse(): %v", err)
+		}
+
+		subValues, ok := kv.Value.([]*KeyValue)
+		if !ok {
+			t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+		}
+
+		if len(subValues) != 1 {
+			t.Fatalf("got %d sub-values, expected 1", len(subValues))
+		}
+
+		nestedObj, ok := subValues[0].Value.([]*KeyValue)
+		if !ok {
+			t.Fatalf("got Value of type %T, expected []*KeyValue", subValues[0].Value)
+		}
+
+		if len(nestedObj) != 1 {
+			t.Fatalf("got %d sub-values, expected 1", len(nestedObj))
+		}
+
+		if nestedObj[0].Key != "inner" {
+			t.Errorf("got key %q, expected %q", nestedObj[0].Key, "inner")
+		}
+	})
 }
