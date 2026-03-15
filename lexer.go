@@ -8,20 +8,19 @@ import (
 )
 
 type lexer struct {
-	input []byte
-
-	pos        int
-	lineStarts []int
-
-	ignoreWhitespace bool
+	input              []byte
+	pos                int
+	lineStarts         []int
+	useEscapeSequences bool
+	peekedToken        *Token
 }
 
-func newLexer(data []byte, ignoreWhitespace bool) *lexer {
+func newLexer(data []byte, useEscapeSequences bool) *lexer {
 	return &lexer{
-		input:            data,
-		pos:              0,
-		lineStarts:       []int{0},
-		ignoreWhitespace: ignoreWhitespace,
+		input:              data,
+		pos:                0,
+		lineStarts:         []int{0},
+		useEscapeSequences: useEscapeSequences,
 	}
 }
 
@@ -41,25 +40,29 @@ func (l *lexer) read() (r rune, size int, err error) {
 }
 
 func (l *lexer) unread(size int) error {
-	if size < 0 || size > l.pos {
+	newPos := l.pos - size
+	if newPos < 0 {
 		return fmt.Errorf("invalid size: %d", size)
 	}
 
-	if len(l.lineStarts) > 1 && l.pos == l.lineStarts[len(l.lineStarts)-1] {
-		l.lineStarts = l.lineStarts[:len(l.lineStarts)-1]
+	// Remove line starts that are after the new position
+	if len(l.lineStarts) > 1 {
+		for newPos < l.lineStarts[len(l.lineStarts)-1] {
+			l.lineStarts = l.lineStarts[:len(l.lineStarts)-1]
+		}
 	}
 
-	l.pos -= size
+	l.pos = newPos
 	return nil
 }
 
-func (l *lexer) calcLineAndColumn() (line int, col int) {
+func calcLineAndColumn(lineStarts []int, pos int) (line int, col int) {
 	low := 0
-	high := len(l.lineStarts)
+	high := len(lineStarts)
 
 	for low < high {
 		mid := low + (high-low)/2
-		if l.lineStarts[mid] <= l.pos {
+		if lineStarts[mid] <= pos {
 			low = mid + 1
 		} else {
 			high = mid
@@ -72,28 +75,41 @@ func (l *lexer) calcLineAndColumn() (line int, col int) {
 	}
 
 	line = lineIdx + 1
-	col = l.pos - l.lineStarts[lineIdx] + 1
+	col = pos - lineStarts[lineIdx] + 1
 	return line, col
 }
 
 func (l *lexer) skipWhitespace() error {
+	l.peekedToken = nil
 	for {
-		r, size, err := l.read()
-		if err != nil {
-			return err
-		}
-		if isWhitespace(r) {
-			continue
+		startPos := l.pos
+
+		for {
+			r, size, err := l.read()
+			if err != nil {
+				return err
+			}
+			if !isWhitespace(r) {
+				if err := l.unread(size); err != nil {
+					return err
+				}
+				break
+			}
 		}
 
-		if err := l.unread(size); err != nil {
+		if err := l.skipComments(); err != nil {
 			return err
 		}
-		return nil
+
+		if startPos == l.pos {
+			break
+		}
 	}
+	return nil
 }
 
 func (l *lexer) skipComments() error {
+	l.peekedToken = nil
 	for {
 		r, size, err := l.read()
 		if err != nil {
@@ -125,11 +141,10 @@ func (l *lexer) skipComments() error {
 			return nil
 		}
 
-		// Line comments and block comments end with a newline
+		// Consume comment until newline is encountered
 		for {
 			r, _, err := l.read()
 			if err == io.EOF {
-				// Comment ended at EOF
 				return nil
 			}
 			if err != nil {
@@ -137,64 +152,39 @@ func (l *lexer) skipComments() error {
 			}
 
 			if r == '\n' {
-				// Newline found, end of current comment
 				break
 			}
 		}
 	}
 }
 
-func (l *lexer) peek() (rune, error) {
-	if l.pos >= len(l.input) {
-		return 0, io.EOF
-	}
-	r, _ := utf8.DecodeRune(l.input[l.pos:])
-	return r, nil
-}
-
-func (l *lexer) peekN(n int) (rune, error) {
-	checkBounds := func(index int) error {
-		if index >= len(l.input) {
-			return io.EOF
-		}
-		return nil
-	}
-	if err := checkBounds(l.pos); err != nil {
-		return 0, err
+func (l *lexer) peek() (*Token, error) {
+	if l.peekedToken != nil {
+		return l.peekedToken, nil
 	}
 
-	var r rune
-	pos := l.pos
-	for i := 0; i < n; i++ {
-		if err := checkBounds(pos); err != nil {
-			return 0, err
-		}
-
-		var size int
-		r, size = utf8.DecodeRune(l.input[pos:])
-		pos += size
+	token, err := l.next()
+	if err != nil {
+		return nil, err
 	}
-	return r, nil
+
+	l.peekedToken = token
+	return token, nil
 }
 
 func (l *lexer) next() (*Token, error) {
+	if l.peekedToken != nil {
+		token := l.peekedToken
+		l.peekedToken = nil
+		return token, nil
+	}
+
 	for {
 		startPos := l.pos
 
-		if l.ignoreWhitespace {
-			if err := l.skipWhitespace(); err != nil {
-				if err == io.EOF {
-					line, col := l.calcLineAndColumn()
-					return NewEOFToken(line, col), nil
-				}
-				return nil, err
-			}
-		}
-
-		// Always skip comments
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
-				line, col := l.calcLineAndColumn()
+				line, col := calcLineAndColumn(l.lineStarts, l.pos)
 				return NewEOFToken(line, col), nil
 			}
 			return nil, err
@@ -206,7 +196,7 @@ func (l *lexer) next() (*Token, error) {
 		}
 	}
 
-	line, col := l.calcLineAndColumn()
+	line, col := calcLineAndColumn(l.lineStarts, l.pos)
 
 	r, _, err := l.read()
 	if err == io.EOF {
@@ -219,11 +209,7 @@ func (l *lexer) next() (*Token, error) {
 	if r == '"' {
 		value, err := l.readString()
 		if err != nil {
-			return nil, &SyntaxError{
-				Line:    line,
-				Column:  col,
-				Message: err.Error(),
-			}
+			return nil, err
 		}
 		return NewStringToken(value, line, col), nil
 	}
@@ -234,20 +220,40 @@ func (l *lexer) next() (*Token, error) {
 func (l *lexer) readString() (string, error) {
 	var sb strings.Builder
 	for {
+		startPos := l.pos
+
 		r, _, err := l.read()
 		if err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("unterminated string literal")
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: "unterminated string literal",
+				}
 			}
 			return "", err
 		}
 
 		if r == '\\' {
-			// Handle escape sequences
+			if !l.useEscapeSequences {
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: "escape sequence not allowed",
+				}
+			}
+
 			next, _, err := l.read()
 			if err != nil {
 				if err == io.EOF {
-					return "", fmt.Errorf("unterminated string literal")
+					line, col := calcLineAndColumn(l.lineStarts, startPos)
+					return "", &SyntaxError{
+						Line:    line,
+						Column:  col,
+						Message: "unterminated string literal",
+					}
 				}
 				return "", err
 			}
@@ -264,7 +270,12 @@ func (l *lexer) readString() (string, error) {
 			case 'r':
 				sb.WriteRune('\r')
 			default:
-				return "", fmt.Errorf("invalid escape sequence: %c", next)
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: fmt.Sprintf("invalid escape sequence: \\%c", next),
+				}
 			}
 			continue
 		}
