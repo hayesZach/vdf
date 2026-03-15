@@ -224,16 +224,21 @@ func (l *lexer) next() (*Token, error) {
 	if r == '"' {
 		value, err := l.readString()
 		if err != nil {
-			return nil, &SyntaxError{
-				Line:    line,
-				Column:  col,
-				Message: err.Error(),
-			}
+			return nil, err
 		}
 		return NewStringToken(value, line, col), nil
 	}
 
 	return NewToken(r, line, col), nil
+}
+
+func (l *lexer) errUnterminatedString() error {
+	line, col := l.calcLineAndColumn()
+	return &SyntaxError{
+		Line:    line,
+		Column:  col,
+		Message: "unterminated string literal",
+	}
 }
 
 func (l *lexer) readString() (string, error) {
@@ -242,21 +247,25 @@ func (l *lexer) readString() (string, error) {
 		r, _, err := l.read()
 		if err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("unterminated string literal")
+				return "", l.errUnterminatedString()
 			}
 			return "", err
 		}
 
 		if r == '\\' {
 			if !l.useEscapeSequences {
-				return "", fmt.Errorf("escape sequence not allowed")
+				line, col := l.calcLineAndColumn()
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: "escape sequence not allowed",
+				}
 			}
 
-			// Handle escape sequences
 			next, _, err := l.read()
 			if err != nil {
 				if err == io.EOF {
-					return "", fmt.Errorf("unterminated string literal")
+					return "", l.errUnterminatedString()
 				}
 				return "", err
 			}
@@ -273,7 +282,12 @@ func (l *lexer) readString() (string, error) {
 			case 'r':
 				sb.WriteRune('\r')
 			default:
-				return "", fmt.Errorf("invalid escape sequence: %c", next)
+				line, col := l.calcLineAndColumn()
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: fmt.Sprintf("invalid escape sequence: \\%c", next),
+				}
 			}
 			continue
 		}
