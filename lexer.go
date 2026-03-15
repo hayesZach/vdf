@@ -8,14 +8,11 @@ import (
 )
 
 type lexer struct {
-	input []byte
-
-	pos        int
-	lineStarts []int
-
+	input              []byte
+	pos                int
+	lineStarts         []int
 	useEscapeSequences bool
-
-	peekedToken *Token
+	peekedToken        *Token
 }
 
 func newLexer(data []byte, useEscapeSequences bool) *lexer {
@@ -43,15 +40,19 @@ func (l *lexer) read() (r rune, size int, err error) {
 }
 
 func (l *lexer) unread(size int) error {
-	if size < 0 || size > l.pos {
+	newPos := l.pos - size
+	if newPos < 0 {
 		return fmt.Errorf("invalid size: %d", size)
 	}
 
-	if len(l.lineStarts) > 1 && l.pos == l.lineStarts[len(l.lineStarts)-1] {
-		l.lineStarts = l.lineStarts[:len(l.lineStarts)-1]
+	// Remove line starts that are after the new position
+	if len(l.lineStarts) > 1 {
+		for newPos < l.lineStarts[len(l.lineStarts)-1] {
+			l.lineStarts = l.lineStarts[:len(l.lineStarts)-1]
+		}
 	}
 
-	l.pos -= size
+	l.pos = newPos
 	return nil
 }
 
@@ -160,22 +161,6 @@ func (l *lexer) skipComments() error {
 func (l *lexer) peek() (*Token, error) {
 	if l.peekedToken != nil {
 		return l.peekedToken, nil
-	}
-
-	for {
-		startPos := l.pos
-
-		if err := l.skipComments(); err != nil {
-			if err == io.EOF {
-				line, col := calcLineAndColumn(l.lineStarts, l.pos)
-				return NewEOFToken(line, col), nil
-			}
-			return nil, err
-		}
-
-		if startPos == l.pos {
-			break
-		}
 	}
 
 	token, err := l.next()

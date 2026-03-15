@@ -65,6 +65,7 @@ func TestLexer_unread(t *testing.T) {
 	testCases := []struct {
 		name  string
 		input string
+		size  int
 		want  rune
 	}{
 		{
@@ -940,6 +941,104 @@ func TestCalcLineAndColumn(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			line, col := calcLineAndColumn(tc.lineStarts, tc.pos)
+			if line != tc.wantLine {
+				t.Errorf("wanted line %d, got %d", tc.wantLine, line)
+			}
+			if col != tc.wantCol {
+				t.Errorf("wanted col %d, got %d", tc.wantCol, col)
+			}
+		})
+	}
+}
+
+func TestCalcLineAndColumn_AfterUnread(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name              string
+		input             string
+		lineStarts        []int
+		pos               int
+		size              int
+		wantLine, wantCol int
+	}{
+		{
+			name:       "unreadToBeginning",
+			input:      "hello\nworld",
+			lineStarts: []int{0, 6},
+			pos:        8,
+			size:       8,
+			wantLine:   1,
+			wantCol:    1,
+		},
+		{
+			name:       "unreadFromStartOfLineToBeginning",
+			input:      "hello\nworld",
+			lineStarts: []int{0, 6},
+			pos:        6,
+			size:       6,
+			wantLine:   1,
+			wantCol:    1,
+		},
+		{
+			name:       "unreadLastLine",
+			input:      "hello\nworld\nhello",
+			lineStarts: []int{0, 6, 12},
+			pos:        14,
+			size:       3,
+			wantLine:   2,
+			wantCol:    6,
+		},
+		{
+			name:       "unreadMultipleLines",
+			input:      "hello\nworld\nhello\nworld",
+			lineStarts: []int{0, 6, 12, 18},
+			pos:        20,
+			size:       11,
+			wantLine:   2,
+			wantCol:    4,
+		},
+		{
+			name:       "unreadFromStartOfLine",
+			input:      "hello\nworld\nhello\nworld",
+			lineStarts: []int{0, 6, 12, 18},
+			pos:        18,
+			size:       6,
+			wantLine:   3,
+			wantCol:    1,
+		},
+		{
+			name:       "unreadMultipleLinesFromStartOfLine",
+			input:      "hello\nworld\nhello\nworld",
+			lineStarts: []int{0, 6, 12, 18},
+			pos:        18,
+			size:       7,
+			wantLine:   2,
+			wantCol:    6,
+		},
+		{
+			name:       "unreadSizeZero",
+			input:      "hello\nworld\nhello",
+			lineStarts: []int{0, 6, 12},
+			pos:        6,
+			size:       0,
+			wantLine:   2,
+			wantCol:    1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lexer := newLexer([]byte(tc.input), false /* useEscapeSequences */)
+			lexer.lineStarts = tc.lineStarts
+			lexer.pos = tc.pos
+
+			err := lexer.unread(tc.size)
+			if err != nil {
+				t.Fatalf("unread(): %v", err)
+			}
+
+			line, col := calcLineAndColumn(lexer.lineStarts, lexer.pos)
 			if line != tc.wantLine {
 				t.Errorf("wanted line %d, got %d", tc.wantLine, line)
 			}

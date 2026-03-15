@@ -143,6 +143,14 @@ func (p *parser) parseObject() ([]*KeyValue, error) {
 
 		if token.Type == WHITESPACE {
 			if err := p.lexer.skipWhitespace(); err != nil {
+				if err == io.EOF {
+					line, col := calcLineAndColumn(p.lexer.lineStarts, p.lexer.pos)
+					return nil, &SyntaxError{
+						Line:    line,
+						Column:  col,
+						Message: "unexpected EOF",
+					}
+				}
 				return nil, err
 			}
 			token, err = p.lexer.peek()
@@ -187,7 +195,6 @@ func (p *parser) parseUnquotedIdentifier() (string, error) {
 			return "", err
 		}
 
-		// todo: use switch statement
 		if token.Type == WHITESPACE || token.Type == LBRACE || token.Type == RBRACE || token.Type == STRING {
 			break
 		} else if token.Type == IDENTIFIER {
