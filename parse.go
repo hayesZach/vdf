@@ -91,7 +91,7 @@ func (p *parser) parseObject() ([]*KeyValue, error) {
 		if token.Type == WHITESPACE {
 			if err := p.lexer.skipWhitespace(); err != nil {
 				if err == io.EOF {
-					line, col := p.lexer.calcLineAndColumn()
+					line, col := calcLineAndColumn(p.lexer.lineStarts, p.lexer.pos)
 					return nil, &SyntaxError{
 						Line:    line,
 						Column:  col,

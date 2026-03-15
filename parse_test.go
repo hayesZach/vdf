@@ -508,7 +508,7 @@ func TestParser_Parse_Comments(t *testing.T) {
 				t.Fatalf("parse(): %v", err)
 			}
 
-			if diff := cmp.Diff(tc.expected, &kv); diff != "" {
+			if diff := cmp.Diff(tc.expected, kv); diff != "" {
 				t.Error(diff)
 			}
 		})

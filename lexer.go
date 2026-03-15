@@ -55,13 +55,13 @@ func (l *lexer) unread(size int) error {
 	return nil
 }
 
-func (l *lexer) calcLineAndColumn() (line int, col int) {
+func calcLineAndColumn(lineStarts []int, pos int) (line int, col int) {
 	low := 0
-	high := len(l.lineStarts)
+	high := len(lineStarts)
 
 	for low < high {
 		mid := low + (high-low)/2
-		if l.lineStarts[mid] <= l.pos {
+		if lineStarts[mid] <= pos {
 			low = mid + 1
 		} else {
 			high = mid
@@ -74,7 +74,7 @@ func (l *lexer) calcLineAndColumn() (line int, col int) {
 	}
 
 	line = lineIdx + 1
-	col = l.pos - l.lineStarts[lineIdx] + 1
+	col = pos - lineStarts[lineIdx] + 1
 	return line, col
 }
 
@@ -167,7 +167,7 @@ func (l *lexer) peek() (*Token, error) {
 
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
-				line, col := l.calcLineAndColumn()
+				line, col := calcLineAndColumn(l.lineStarts, l.pos)
 				return NewEOFToken(line, col), nil
 			}
 			return nil, err
@@ -199,7 +199,7 @@ func (l *lexer) next() (*Token, error) {
 
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
-				line, col := l.calcLineAndColumn()
+				line, col := calcLineAndColumn(l.lineStarts, l.pos)
 				return NewEOFToken(line, col), nil
 			}
 			return nil, err
@@ -211,7 +211,7 @@ func (l *lexer) next() (*Token, error) {
 		}
 	}
 
-	line, col := l.calcLineAndColumn()
+	line, col := calcLineAndColumn(l.lineStarts, l.pos)
 
 	r, _, err := l.read()
 	if err == io.EOF {
@@ -232,29 +232,27 @@ func (l *lexer) next() (*Token, error) {
 	return NewToken(r, line, col), nil
 }
 
-func (l *lexer) errUnterminatedString() error {
-	line, col := l.calcLineAndColumn()
-	return &SyntaxError{
-		Line:    line,
-		Column:  col,
-		Message: "unterminated string literal",
-	}
-}
-
 func (l *lexer) readString() (string, error) {
 	var sb strings.Builder
 	for {
+		startPos := l.pos
+
 		r, _, err := l.read()
 		if err != nil {
 			if err == io.EOF {
-				return "", l.errUnterminatedString()
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				return "", &SyntaxError{
+					Line:    line,
+					Column:  col,
+					Message: "unterminated string literal",
+				}
 			}
 			return "", err
 		}
 
 		if r == '\\' {
 			if !l.useEscapeSequences {
-				line, col := l.calcLineAndColumn()
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
 				return "", &SyntaxError{
 					Line:    line,
 					Column:  col,
@@ -265,7 +263,12 @@ func (l *lexer) readString() (string, error) {
 			next, _, err := l.read()
 			if err != nil {
 				if err == io.EOF {
-					return "", l.errUnterminatedString()
+					line, col := calcLineAndColumn(l.lineStarts, startPos)
+					return "", &SyntaxError{
+						Line:    line,
+						Column:  col,
+						Message: "unterminated string literal",
+					}
 				}
 				return "", err
 			}
@@ -282,7 +285,7 @@ func (l *lexer) readString() (string, error) {
 			case 'r':
 				sb.WriteRune('\r')
 			default:
-				line, col := l.calcLineAndColumn()
+				line, col := calcLineAndColumn(l.lineStarts, startPos)
 				return "", &SyntaxError{
 					Line:    line,
 					Column:  col,
