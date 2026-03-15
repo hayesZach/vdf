@@ -63,28 +63,46 @@ func TestLexer_unread(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name  string
-		input string
-		size  int
-		want  rune
+		name       string
+		input      string
+		lineStarts []int
+		pos        int
+		size       int
+		want       rune
 	}{
 		{
-			name:  "unread",
-			input: `test`,
-			want:  't',
+			name:       "unread",
+			input:      `test`,
+			lineStarts: []int{0},
+			pos:        1,
+			size:       1,
+			want:       't',
+		},
+		{
+			name:       "unreadMultipleCharacters",
+			input:      "test",
+			lineStarts: []int{0},
+			pos:        4,
+			size:       2,
+			want:       's',
+		},
+		{
+			name:       "unreadMultipleCharactersFromEndOfLine",
+			input:      "test\n",
+			lineStarts: []int{0, 5},
+			pos:        5,
+			size:       2,
+			want:       't',
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lexer := newLexer([]byte(tc.input), false /* useEscapeSequences */)
+			lexer.lineStarts = tc.lineStarts
+			lexer.pos = tc.pos
 
-			_, size, err := lexer.read()
-			if err != nil {
-				t.Fatalf("read(): %v", err)
-			}
-
-			err = lexer.unread(size)
+			err := lexer.unread(tc.size)
 			if err != nil {
 				t.Fatalf("unread(): %v", err)
 			}
@@ -1024,6 +1042,24 @@ func TestCalcLineAndColumn_AfterUnread(t *testing.T) {
 			size:       0,
 			wantLine:   2,
 			wantCol:    1,
+		},
+		{
+			name:       "unreadWithMultiByteCharacters",
+			input:      "hi世界\nworld",
+			lineStarts: []int{0, 9},
+			pos:        14,
+			size:       6,
+			wantLine:   1,
+			wantCol:    9,
+		},
+		{
+			name:       "unreadWithEmoji",
+			input:      "ab🔥\nxy",
+			lineStarts: []int{0, 7},
+			pos:        9,
+			size:       3,
+			wantLine:   1,
+			wantCol:    7,
 		},
 	}
 
