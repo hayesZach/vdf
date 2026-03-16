@@ -958,7 +958,7 @@ func TestCalcLineAndColumn(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			line, col := calcLineAndColumn(tc.lineStarts, tc.pos)
+			line, col := calcLineAndColumn([]byte(tc.input), tc.pos, tc.lineStarts)
 			if line != tc.wantLine {
 				t.Errorf("wanted line %d, got %d", tc.wantLine, line)
 			}
@@ -1047,19 +1047,19 @@ func TestCalcLineAndColumn_AfterUnread(t *testing.T) {
 			name:       "unreadWithMultiByteCharacters",
 			input:      "hi世界\nworld",
 			lineStarts: []int{0, 9},
-			pos:        14,
+			pos:        11,
 			size:       6,
 			wantLine:   1,
-			wantCol:    9,
+			wantCol:    4,
 		},
 		{
 			name:       "unreadWithEmoji",
 			input:      "ab🔥\nxy",
 			lineStarts: []int{0, 7},
-			pos:        9,
-			size:       3,
+			pos:        8,
+			size:       6,
 			wantLine:   1,
-			wantCol:    7,
+			wantCol:    3,
 		},
 	}
 
@@ -1074,7 +1074,7 @@ func TestCalcLineAndColumn_AfterUnread(t *testing.T) {
 				t.Fatalf("unread(): %v", err)
 			}
 
-			line, col := calcLineAndColumn(lexer.lineStarts, lexer.pos)
+			line, col := calcLineAndColumn(lexer.input, lexer.pos, lexer.lineStarts)
 			if line != tc.wantLine {
 				t.Errorf("wanted line %d, got %d", tc.wantLine, line)
 			}

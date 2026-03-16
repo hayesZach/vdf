@@ -56,7 +56,7 @@ func (l *lexer) unread(size int) error {
 	return nil
 }
 
-func calcLineAndColumn(lineStarts []int, pos int) (line int, col int) {
+func calcLineAndColumn(input []byte, pos int, lineStarts []int) (line int, col int) {
 	low := 0
 	high := len(lineStarts)
 
@@ -73,9 +73,10 @@ func calcLineAndColumn(lineStarts []int, pos int) (line int, col int) {
 	if lineIdx < 0 {
 		lineIdx = 0
 	}
-
 	line = lineIdx + 1
-	col = pos - lineStarts[lineIdx] + 1
+
+	runeCount := utf8.RuneCount(input[lineStarts[lineIdx]:pos])
+	col = runeCount + 1
 	return line, col
 }
 
@@ -184,7 +185,7 @@ func (l *lexer) next() (*Token, error) {
 
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
-				line, col := calcLineAndColumn(l.lineStarts, l.pos)
+				line, col := calcLineAndColumn(l.input, l.pos, l.lineStarts)
 				return NewEOFToken(line, col), nil
 			}
 			return nil, err
@@ -196,7 +197,7 @@ func (l *lexer) next() (*Token, error) {
 		}
 	}
 
-	line, col := calcLineAndColumn(l.lineStarts, l.pos)
+	line, col := calcLineAndColumn(l.input, l.pos, l.lineStarts)
 
 	r, _, err := l.read()
 	if err == io.EOF {
@@ -225,7 +226,7 @@ func (l *lexer) readString() (string, error) {
 		r, _, err := l.read()
 		if err != nil {
 			if err == io.EOF {
-				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				line, col := calcLineAndColumn(l.input, startPos, l.lineStarts)
 				return "", &SyntaxError{
 					Line:    line,
 					Column:  col,
@@ -237,7 +238,7 @@ func (l *lexer) readString() (string, error) {
 
 		if r == '\\' {
 			if !l.useEscapeSequences {
-				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				line, col := calcLineAndColumn(l.input, startPos, l.lineStarts)
 				return "", &SyntaxError{
 					Line:    line,
 					Column:  col,
@@ -248,7 +249,7 @@ func (l *lexer) readString() (string, error) {
 			next, _, err := l.read()
 			if err != nil {
 				if err == io.EOF {
-					line, col := calcLineAndColumn(l.lineStarts, startPos)
+					line, col := calcLineAndColumn(l.input, startPos, l.lineStarts)
 					return "", &SyntaxError{
 						Line:    line,
 						Column:  col,
@@ -270,7 +271,7 @@ func (l *lexer) readString() (string, error) {
 			case 'r':
 				sb.WriteRune('\r')
 			default:
-				line, col := calcLineAndColumn(l.lineStarts, startPos)
+				line, col := calcLineAndColumn(l.input, startPos, l.lineStarts)
 				return "", &SyntaxError{
 					Line:    line,
 					Column:  col,
