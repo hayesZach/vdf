@@ -174,8 +174,8 @@ func TestKeyValue_String(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.kv.String(); got != tc.want {
-				t.Errorf("String() = %q, want %q", got, tc.want)
+			if got := tc.kv.GetString(); got != tc.want {
+				t.Errorf("GetString() = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -674,7 +674,7 @@ func TestKeyValue_Find(t *testing.T) {
 		},
 		{
 			name:      "findByValue",
-			predicate: func(kv *KeyValue) bool { return kv.String() == "found" },
+			predicate: func(kv *KeyValue) bool { return kv.GetString() == "found" },
 			wantKey:   "target",
 		},
 		{

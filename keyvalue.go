@@ -21,8 +21,8 @@ func (k *KeyValue) IsLeaf() bool {
 	return ok
 }
 
-// String returns the string value if this is a leaf node, empty string otherwise.
-func (k *KeyValue) String() string {
+// GetString returns the string value if this is a leaf node, empty string otherwise.
+func (k *KeyValue) GetString() string {
 	if s, ok := k.Value.(string); ok {
 		return s
 	}
