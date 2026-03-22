@@ -25,19 +25,23 @@ func (p *parser) parse() (*Document, error) {
 		}
 	}
 
-	var rootKey string
+	doc := &Document{
+		Root: &KeyValue{},
+		Map:  make(map[string]any),
+	}
+
 	switch token.Type {
 	case EOF:
-		return &Document{}, nil
+		return doc, nil
 	case STRING:
-		rootKey = token.Lexeme
+		doc.Root.Key = token.Lexeme
 		p.lexer.next()
 	case IDENTIFIER:
 		key, err := p.parseUnquotedIdentifier()
 		if err != nil {
 			return nil, err
 		}
-		rootKey = key
+		doc.Root.Key = key
 	default:
 		return nil, &SyntaxError{
 			Line:    token.Line,
@@ -52,15 +56,8 @@ func (p *parser) parse() (*Document, error) {
 		return nil, err
 	}
 
-	doc := &Document{
-		Root: &KeyValue{
-			Key:   rootKey,
-			Value: subSlice,
-		},
-		Map: map[string]any{
-			rootKey: subMap,
-		},
-	}
+	doc.Root.Value = subSlice
+	doc.Map = subMap
 
 	return doc, nil
 }
