@@ -12,7 +12,7 @@ func (k *KeyValue) Children() ([]*KeyValue, error) {
 	if children, ok := k.Value.([]*KeyValue); ok {
 		return children, nil
 	}
-	return nil, fmt.Errorf("has no children")
+	return nil, fmt.Errorf("no children")
 }
 
 // IsLeaf returns true if Value is a string (terminal node).
@@ -158,6 +158,7 @@ func (k *KeyValue) Each(fn func(child *KeyValue) bool) {
 	if err != nil {
 		return
 	}
+
 	for _, child := range children {
 		if !fn(child) {
 			return
@@ -165,53 +166,75 @@ func (k *KeyValue) Each(fn func(child *KeyValue) bool) {
 	}
 }
 
+func (k *KeyValue) walk(path []string, fn func([]string, *KeyValue) error) error {
+	if err := fn(path, k); err != nil {
+		return err
+	}
+
+	children, err := k.Children()
+	if err != nil {
+		return nil
+	}
+
+	childPath := append(path, k.Key)
+	for _, child := range children {
+		if err := child.walk(childPath, fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Walk visits every node in the tree depth-first (pre-order).
 // The path slice contains the keys from the root down to (but not including) the current node.
 // Return false from fn to stop the walk entirely.
-func (k *KeyValue) Walk(fn func(path []string, node *KeyValue) bool) {
-	k.walk(nil, fn)
+func (k *KeyValue) Walk(fn func(path []string, node *KeyValue) error) error {
+	return k.walk(nil, fn)
 }
 
-func (k *KeyValue) walk(path []string, fn func([]string, *KeyValue) bool) bool {
-	if !fn(path, k) {
-		return false
-	}
+func (k *KeyValue) find(fn func(*KeyValue) bool) *KeyValue {
 	children, err := k.Children()
 	if err != nil {
-		return true
+		return nil
 	}
-	childPath := append(path, k.Key)
+
 	for _, child := range children {
-		if !child.walk(childPath, fn) {
-			return false
+		if fn(child) {
+			return child
+		}
+		if _, ok := child.Value.([]*KeyValue); ok {
+			if result := child.find(fn); result != nil {
+				return result
+			}
 		}
 	}
-	return true
+	return nil
 }
 
 // Find returns the first node in a depth-first search that matches the predicate, or nil.
 func (k *KeyValue) Find(predicate func(*KeyValue) bool) *KeyValue {
-	var result *KeyValue
-	k.Walk(func(_ []string, node *KeyValue) bool {
-		if predicate(node) {
-			result = node
-			return false
+	return k.find(predicate)
+}
+
+func (k *KeyValue) findAll(fn func(*KeyValue) bool) []*KeyValue {
+	var results []*KeyValue
+	children, err := k.Children()
+	if err != nil {
+		return nil
+	}
+
+	for _, child := range children {
+		if fn(child) {
+			results = append(results, child)
 		}
-		return true
-	})
-	return result
+		results = append(results, child.findAll(fn)...)
+	}
+	return results
 }
 
 // FindAll returns all nodes in a depth-first search that match the predicate.
 func (k *KeyValue) FindAll(predicate func(*KeyValue) bool) []*KeyValue {
-	var results []*KeyValue
-	k.Walk(func(_ []string, node *KeyValue) bool {
-		if predicate(node) {
-			results = append(results, node)
-		}
-		return true
-	})
-	return results
+	return k.findAll(predicate)
 }
 
 // FindByKey does a deep search for all nodes with the given key.
@@ -223,7 +246,7 @@ func (k *KeyValue) FindByKey(key string) []*KeyValue {
 
 // GetSubMap converts the tree to a map representation.
 // Duplicate keys with object values are merged; duplicate leaf keys keep the last value.
-func (k *KeyValue) GetSubMap() VdfMap {
+func (k *KeyValue) GetSubMap() Map {
 	m := make(map[string]any)
 
 	children, ok := k.Value.([]*KeyValue)
@@ -240,8 +263,8 @@ func (k *KeyValue) GetSubMap() VdfMap {
 		}
 
 		if existing, exists := m[child.Key]; exists {
-			existingMap, ok1 := existing.(VdfMap)
-			valMap, ok2 := val.(VdfMap)
+			existingMap, ok1 := existing.(Map)
+			valMap, ok2 := val.(Map)
 
 			if ok1 && ok2 {
 				mergeMaps(existingMap, valMap)
@@ -255,9 +278,7 @@ func (k *KeyValue) GetSubMap() VdfMap {
 	return m
 }
 
-type VdfMap map[string]any
-
 type Document struct {
 	Root *KeyValue
-	Map  VdfMap
+	Map  Map
 }

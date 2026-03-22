@@ -15,6 +15,7 @@ func TestParser_Parse(t *testing.T) {
 		input              string
 		useEscapeSequences bool
 		expected           *KeyValue
+		expectedMap        Map
 	}{
 		{
 			name: "emptyObject",
@@ -24,6 +25,9 @@ func TestParser_Parse(t *testing.T) {
 			expected: &KeyValue{
 				Key:   "root",
 				Value: []*KeyValue{},
+			},
+			expectedMap: Map{
+				"root": Map{},
 			},
 		},
 		{
@@ -36,6 +40,11 @@ func TestParser_Parse(t *testing.T) {
 				Key: "root",
 				Value: []*KeyValue{
 					{Key: "key", Value: "value"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"key": "value",
 				},
 			},
 		},
@@ -53,6 +62,11 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "duplicate", Value: "value1"},
 					{Key: "duplicate", Value: "value2"},
 					{Key: "duplicate", Value: "value3"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"duplicate": "value3",
 				},
 			},
 		},
@@ -74,6 +88,12 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "key2", Value: "value2"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key1": "value1",
+					"key2": "value2",
+				},
+			},
 		},
 		{
 			name: "unquotedIdentifier",
@@ -85,6 +105,11 @@ func TestParser_Parse(t *testing.T) {
 				Key: "root",
 				Value: []*KeyValue{
 					{Key: "key", Value: "value"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"key": "value",
 				},
 			},
 		},
@@ -104,6 +129,13 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "key3", Value: "value3"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key1": "value1",
+					"key2": "value2",
+					"key3": "value3",
+				},
+			},
 		},
 		{
 			name: "noSpaceBetweenKeysAndValues",
@@ -120,6 +152,13 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "key3", Value: "value3"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key1": "value1",
+					"key2": "value2",
+					"key3": "value3",
+				},
+			},
 		},
 		{
 			name: "unquotedFollowedByRBrace",
@@ -132,6 +171,11 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "key", Value: "value"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key": "value",
+				},
+			},
 		},
 		{
 			name: "unquotedFollowedByBrace",
@@ -141,6 +185,11 @@ func TestParser_Parse(t *testing.T) {
 				Key: "root",
 				Value: []*KeyValue{
 					{Key: "key", Value: "value"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"key": "value",
 				},
 			},
 		},
@@ -161,6 +210,13 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "key\t3", Value: "value\t3"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"\"key1\"": "\"value1\"",
+					"\nkey2":   "\nvalue2",
+					"key\t3":   "value\t3",
+				},
+			},
 		},
 		{
 			name: "quotedControlCharacters",
@@ -173,6 +229,11 @@ func TestParser_Parse(t *testing.T) {
 				Key: "root",
 				Value: []*KeyValue{
 					{Key: "some{\"}key", Value: "value"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"some{\"}key": "value",
 				},
 			},
 		},
@@ -195,6 +256,14 @@ func TestParser_Parse(t *testing.T) {
 							{Key: "key1", Value: "value1"},
 							{Key: "key2", Value: "value2"},
 						},
+					},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"nested": Map{
+						"key1": "value1",
+						"key2": "value2",
 					},
 				},
 			},
@@ -241,6 +310,20 @@ func TestParser_Parse(t *testing.T) {
 					},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"nested": Map{
+						"nested2": Map{
+							"nested2_key1": "nested2_value1",
+							"nested2_key2": "nested2_value2",
+							"nested3": Map{
+								"nested3_key1": "nested3_value1",
+								"nested3_key2": "nested3_value2",
+							},
+						},
+					},
+				},
+			},
 		},
 		{
 			name: "nestedUnquoted",
@@ -259,6 +342,13 @@ func TestParser_Parse(t *testing.T) {
 						Value: []*KeyValue{
 							{Key: "key", Value: "value"},
 						},
+					},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"nested": Map{
+						"key": "value",
 					},
 				},
 			},
@@ -293,6 +383,16 @@ func TestParser_Parse(t *testing.T) {
 					},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"sibling1": Map{
+						"key1": "value1",
+					},
+					"sibling2": Map{
+						"key2": "value2",
+					},
+				},
+			},
 		},
 		{
 			name: "specialCharactersInStrings",
@@ -305,18 +405,16 @@ func TestParser_Parse(t *testing.T) {
 			expected: &KeyValue{
 				Key: "root",
 				Value: []*KeyValue{
-					{
-						Key:   "key with spaces",
-						Value: "value with spaces",
-					},
-					{
-						Key:   "key{brace",
-						Value: "value}brace",
-					},
-					{
-						Key:   "key/slash",
-						Value: "value/slash",
-					},
+					{Key: "key with spaces", Value: "value with spaces"},
+					{Key: "key{brace", Value: "value}brace"},
+					{Key: "key/slash", Value: "value/slash"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"key with spaces": "value with spaces",
+					"key{brace":       "value}brace",
+					"key/slash":       "value/slash",
 				},
 			},
 		},
@@ -331,6 +429,11 @@ func TestParser_Parse(t *testing.T) {
 					{Key: "some!key", Value: "some%/value"},
 				},
 			},
+			expectedMap: Map{
+				"root123!@#$%^&*()": Map{
+					"some!key": "some%/value",
+				},
+			},
 		},
 		{
 			name:  "noWhitespace",
@@ -340,6 +443,12 @@ func TestParser_Parse(t *testing.T) {
 				Value: []*KeyValue{
 					{Key: "key", Value: "value"},
 					{Key: "key2", Value: "value2"},
+				},
+			},
+			expectedMap: Map{
+				"root": Map{
+					"key":  "value",
+					"key2": "value2",
 				},
 			},
 		},
@@ -358,19 +467,30 @@ func TestParser_Parse(t *testing.T) {
 					},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"nested": Map{
+						"key":  "value",
+						"key2": "value2",
+					},
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &parser{lexer: newLexer([]byte(tc.input), tc.useEscapeSequences)}
-			kv, err := p.parse()
+			doc, err := p.parse()
 			if err != nil {
 				t.Fatalf("Parse(): %v", err)
 			}
 
-			if diff := cmp.Diff(tc.expected, kv); diff != "" {
-				t.Error(diff)
+			if diff := cmp.Diff(tc.expected, doc.Root); diff != "" {
+				t.Errorf("Root (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.expectedMap, doc.Map); diff != "" {
+				t.Errorf("Map (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -462,9 +582,10 @@ func TestParser_Parse_Comments(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
-		input    string
-		expected *KeyValue
+		name        string
+		input       string
+		expected    *KeyValue
+		expectedMap Map
 	}{
 		{
 			name: "fullLineComments",
@@ -483,6 +604,12 @@ func TestParser_Parse_Comments(t *testing.T) {
 					{Key: "key2", Value: "value2"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key1": "value1",
+					"key2": "value2",
+				},
+			},
 		},
 		{
 			name: "commentsAtEnd",
@@ -497,19 +624,27 @@ func TestParser_Parse_Comments(t *testing.T) {
 					{Key: "key", Value: "value"},
 				},
 			},
+			expectedMap: Map{
+				"root": Map{
+					"key": "value",
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &parser{lexer: newLexer([]byte(tc.input), false)}
-			kv, err := p.parse()
+			doc, err := p.parse()
 			if err != nil {
 				t.Fatalf("parse(): %v", err)
 			}
 
-			if diff := cmp.Diff(tc.expected, kv); diff != "" {
-				t.Error(diff)
+			if diff := cmp.Diff(tc.expected, doc.Root); diff != "" {
+				t.Errorf("Root (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.expectedMap, doc.Map); diff != "" {
+				t.Errorf("Map (-want +got):\n%s", diff)
 			}
 		})
 	}

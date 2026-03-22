@@ -27,7 +27,7 @@ func (p *parser) parse() (*Document, error) {
 
 	doc := &Document{
 		Root: &KeyValue{},
-		Map:  make(VdfMap),
+		Map:  make(Map),
 	}
 
 	switch token.Type {
@@ -57,12 +57,12 @@ func (p *parser) parse() (*Document, error) {
 	}
 
 	doc.Root.Value = subSlice
-	doc.Map = subMap
+	doc.Map[doc.Root.Key] = subMap
 
 	return doc, nil
 }
 
-func (p *parser) parseObject() ([]*KeyValue, VdfMap, error) {
+func (p *parser) parseObject() ([]*KeyValue, Map, error) {
 	token, err := p.lexer.next()
 	if err != nil {
 		return nil, nil, err
@@ -188,7 +188,7 @@ func (p *parser) parseObject() ([]*KeyValue, VdfMap, error) {
 			kv.Value = subSlice
 
 			if existing, exists := objMap[kv.Key]; exists {
-				if existingMap, ok := existing.(VdfMap); ok {
+				if existingMap, ok := existing.(Map); ok {
 					mergeMaps(existingMap, subMap)
 				} else {
 					objMap[kv.Key] = subMap
