@@ -9,9 +9,7 @@ type parser struct {
 	lexer *lexer
 }
 
-func (p *parser) parse() (*KeyValue, error) {
-	root := &KeyValue{}
-
+func (p *parser) parse() (*Document, error) {
 	token, err := p.lexer.peek()
 	if err != nil {
 		return nil, err
@@ -27,18 +25,19 @@ func (p *parser) parse() (*KeyValue, error) {
 		}
 	}
 
+	var rootKey string
 	switch token.Type {
 	case EOF:
-		return root, nil
+		return &Document{}, nil
 	case STRING:
-		root.Key = token.Lexeme
+		rootKey = token.Lexeme
 		p.lexer.next()
 	case IDENTIFIER:
 		key, err := p.parseUnquotedIdentifier()
 		if err != nil {
 			return nil, err
 		}
-		root.Key = key
+		rootKey = key
 	default:
 		return nil, &SyntaxError{
 			Line:    token.Line,
@@ -47,34 +46,43 @@ func (p *parser) parse() (*KeyValue, error) {
 		}
 	}
 
-	// Parse the value, should be an object for root
-	val, err := p.parseObject()
+	// Parse the root object
+	subSlice, subMap, err := p.parseObject()
 	if err != nil {
 		return nil, err
 	}
-	root.Value = val
 
-	return root, nil
+	doc := &Document{
+		Root: &KeyValue{
+			Key:   rootKey,
+			Value: subSlice,
+		},
+		Map: map[string]any{
+			rootKey: subMap,
+		},
+	}
+
+	return doc, nil
 }
 
-func (p *parser) parseObject() ([]*KeyValue, error) {
+func (p *parser) parseObject() ([]*KeyValue, map[string]any, error) {
 	token, err := p.lexer.next()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if token.Type == WHITESPACE {
 		if err := p.lexer.skipWhitespace(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		token, err = p.lexer.next()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if token.Type != LBRACE {
-		return nil, &SyntaxError{
+		return nil, nil, &SyntaxError{
 			Line:    token.Line,
 			Column:  token.Column,
 			Message: fmt.Sprintf("invalid token %s, expected LBRACE", token.Type.String()),
@@ -82,32 +90,34 @@ func (p *parser) parseObject() ([]*KeyValue, error) {
 	}
 
 	subKeyValues := make([]*KeyValue, 0)
+	objMap := make(map[string]any)
+
 	for {
 		token, err = p.lexer.peek()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if token.Type == WHITESPACE {
 			if err := p.lexer.skipWhitespace(); err != nil {
 				if err == io.EOF {
 					line, col := calcLineAndColumn(p.lexer.input, p.lexer.pos, p.lexer.lineStarts)
-					return nil, &SyntaxError{
+					return nil, nil, &SyntaxError{
 						Line:    line,
 						Column:  col,
 						Message: "unexpected EOF",
 					}
 				}
-				return nil, err
+				return nil, nil, err
 			}
 			token, err = p.lexer.peek()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
 		if token.Type == EOF {
-			return nil, &SyntaxError{
+			return nil, nil, &SyntaxError{
 				Line:    token.Line,
 				Column:  token.Column,
 				Message: "unexpected EOF",
@@ -117,74 +127,89 @@ func (p *parser) parseObject() ([]*KeyValue, error) {
 			break
 		}
 
-		kv := &KeyValue{}
+		var parsedKey string
 		switch token.Type {
 		case STRING:
-			kv.Key = token.Lexeme
+			parsedKey = token.Lexeme
 			p.lexer.next()
 		case IDENTIFIER:
 			key, err := p.parseUnquotedIdentifier()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			kv.Key = key
+			parsedKey = key
 		default:
-			return nil, &SyntaxError{
+			return nil, nil, &SyntaxError{
 				Line:    token.Line,
 				Column:  token.Column,
 				Message: fmt.Sprintf("invalid token %s, expected STRING or IDENTIFIER", token.Type.String()),
 			}
 		}
 
+		kv := &KeyValue{Key: parsedKey}
+
 		token, err = p.lexer.peek()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if token.Type == WHITESPACE {
 			if err := p.lexer.skipWhitespace(); err != nil {
 				if err == io.EOF {
 					line, col := calcLineAndColumn(p.lexer.input, p.lexer.pos, p.lexer.lineStarts)
-					return nil, &SyntaxError{
+					return nil, nil, &SyntaxError{
 						Line:    line,
 						Column:  col,
 						Message: "unexpected EOF",
 					}
 				}
-				return nil, err
+				return nil, nil, err
 			}
 			token, err = p.lexer.peek()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
 		switch token.Type {
 		case STRING:
 			kv.Value = token.Lexeme
+			objMap[kv.Key] = token.Lexeme
 			p.lexer.next()
 		case IDENTIFIER:
 			value, err := p.parseUnquotedIdentifier()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			kv.Value = value
+			objMap[kv.Key] = value
 		case LBRACE:
-			obj, err := p.parseObject()
+			obj, nestedMap, err := p.parseObject()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			kv.Value = obj
+
+			if existing, exists := objMap[kv.Key]; exists {
+				if existingMap, ok := existing.(map[string]any); ok {
+					mergeMaps(existingMap, nestedMap)
+				} else {
+					objMap[kv.Key] = nestedMap
+				}
+			} else {
+				objMap[kv.Key] = nestedMap
+			}
 		default:
-			return nil, &SyntaxError{
+			return nil, nil, &SyntaxError{
 				Line:    token.Line,
 				Column:  token.Column,
 				Message: fmt.Sprintf("invalid token %s, expected STRING, IDENTIFIER, or LBRACE", token.Type.String()),
 			}
 		}
+
 		subKeyValues = append(subKeyValues, kv)
 	}
-	return subKeyValues, nil
+	return subKeyValues, objMap, nil
 }
 
 func (p *parser) parseUnquotedIdentifier() (string, error) {
