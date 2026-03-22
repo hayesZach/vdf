@@ -27,7 +27,7 @@ func (p *parser) parse() (*Document, error) {
 
 	doc := &Document{
 		Root: &KeyValue{},
-		Map:  make(map[string]any),
+		Map:  make(VdfMap),
 	}
 
 	switch token.Type {
@@ -62,7 +62,7 @@ func (p *parser) parse() (*Document, error) {
 	return doc, nil
 }
 
-func (p *parser) parseObject() ([]*KeyValue, map[string]any, error) {
+func (p *parser) parseObject() ([]*KeyValue, VdfMap, error) {
 	token, err := p.lexer.next()
 	if err != nil {
 		return nil, nil, err
@@ -181,20 +181,20 @@ func (p *parser) parseObject() ([]*KeyValue, map[string]any, error) {
 			kv.Value = value
 			objMap[kv.Key] = value
 		case LBRACE:
-			obj, nestedMap, err := p.parseObject()
+			subSlice, subMap, err := p.parseObject()
 			if err != nil {
 				return nil, nil, err
 			}
-			kv.Value = obj
+			kv.Value = subSlice
 
 			if existing, exists := objMap[kv.Key]; exists {
-				if existingMap, ok := existing.(map[string]any); ok {
-					mergeMaps(existingMap, nestedMap)
+				if existingMap, ok := existing.(VdfMap); ok {
+					mergeMaps(existingMap, subMap)
 				} else {
-					objMap[kv.Key] = nestedMap
+					objMap[kv.Key] = subMap
 				}
 			} else {
-				objMap[kv.Key] = nestedMap
+				objMap[kv.Key] = subMap
 			}
 		default:
 			return nil, nil, &SyntaxError{
