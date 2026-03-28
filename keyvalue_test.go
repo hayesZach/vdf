@@ -2,10 +2,8 @@ package vdf
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -57,60 +55,6 @@ func testTree() *KeyValue {
 			}},
 		},
 	}
-}
-
-func TestKeyValue_ExtractUnusuals(t *testing.T) {
-	t.Parallel()
-
-	doc, err := parseFile("./static/items_game.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Get all items
-	items, err := doc.Root.GetAll("items")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type pair struct {
-		itemName string
-		itemSet  string
-	}
-
-	// Extract knives and their likely corresponding case
-	var pairs []pair
-	for _, item := range items {
-		children, err := item.Children()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, child := range children {
-			subMap := child.GetSubMap()
-
-			itemName := subMap["name"].(string)
-			if !strings.HasPrefix(itemName, "weapon_knife_") {
-				continue
-			}
-
-			itemPrefab := subMap["prefab"].(string)
-
-			if itemPrefab != "melee_unusual" {
-				continue
-			}
-
-			if tag, err := child.Get("tags", "ItemSet", "tag_value"); err == nil {
-				if tagValue, ok := tag.Value.(string); ok {
-					pairs = append(pairs, pair{itemName, tagValue})
-				}
-			} else {
-				pairs = append(pairs, pair{itemName, "unusual_revolving_list"})
-			}
-		}
-	}
-
-	fmt.Printf("%v", pairs)
 }
 
 func TestKeyValue_IsLeaf(t *testing.T) {
@@ -550,42 +494,63 @@ func TestKeyValue_Keys_Leaf(t *testing.T) {
 func TestKeyValue_Each(t *testing.T) {
 	t.Parallel()
 
-	tree := testTree()
+	testTree := testTree()
 
-	t.Run("visitsAllChildren", func(t *testing.T) {
-		var keys []string
-		tree.Each(func(child *KeyValue) bool {
-			keys = append(keys, child.Key)
-			return true
-		})
-		want := []string{"name", "version", "section", "section", "deep"}
-		if diff := cmp.Diff(want, keys); diff != "" {
-			t.Errorf("Each() visited keys mismatch (-want +got):\n%s", diff)
-		}
-	})
+	testCases := []struct {
+		name string
+		tree *KeyValue
+		each func(tree *KeyValue) any
+		want any
+	}{
+		{
+			name: "visitsAllChildren",
+			tree: testTree,
+			each: func(tree *KeyValue) any {
+				var keys []string
+				tree.Each(func(child *KeyValue) bool {
+					keys = append(keys, child.Key)
+					return true
+				})
+				return keys
+			},
+			want: []string{"name", "version", "section", "section", "deep"},
+		},
+		{
+			name: "earlyStop",
+			tree: testTree,
+			each: func(tree *KeyValue) any {
+				count := 0
+				tree.Each(func(child *KeyValue) bool {
+					count++
+					return count < 2
+				})
+				return count
+			},
+			want: 2,
+		},
+		{
+			name: "leafNoOp",
+			tree: &KeyValue{Key: "k", Value: "v"},
+			each: func(tree *KeyValue) any {
+				called := false
+				tree.Each(func(child *KeyValue) bool {
+					called = true
+					return true
+				})
+				return called
+			},
+			want: false,
+		},
+	}
 
-	t.Run("earlyStop", func(t *testing.T) {
-		count := 0
-		tree.Each(func(child *KeyValue) bool {
-			count++
-			return count < 2
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.each(tc.tree)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Each() mismatch (-want +got):\n%s", diff)
+			}
 		})
-		if count != 2 {
-			t.Errorf("Each() with early stop visited %d, want 2", count)
-		}
-	})
-
-	t.Run("leafNoOp", func(t *testing.T) {
-		leaf := &KeyValue{Key: "k", Value: "v"}
-		called := false
-		leaf.Each(func(child *KeyValue) bool {
-			called = true
-			return true
-		})
-		if called {
-			t.Error("Each() on leaf should not call fn")
-		}
-	})
+	}
 }
 
 func TestKeyValue_Walk(t *testing.T) {
@@ -601,59 +566,73 @@ func TestKeyValue_Walk(t *testing.T) {
 		},
 	}
 
-	t.Run("visitsAllNodes", func(t *testing.T) {
-		var visited []string
-		err := tree.Walk(func(path []string, node *KeyValue) error {
-			visited = append(visited, node.Key)
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("Walk(): %v", err)
-		}
+	testCases := []struct {
+		name string
+		walk func(tree *KeyValue) any
+		want any
+	}{
+		{
+			name: "visitsAllNodes",
+			walk: func(tree *KeyValue) any {
+				var visited []string
+				err := tree.Walk(func(path []string, node *KeyValue) error {
+					visited = append(visited, node.Key)
+					return nil
+				})
+				if err != nil {
+					return err
+				}
+				return visited
+			},
+			want: []string{"root", "a", "b", "c"},
+		},
+		{
+			name: "earlyStop",
+			walk: func(tree *KeyValue) any {
+				count := 0
+				_ = tree.Walk(func(path []string, node *KeyValue) error {
+					count++
+					if count < 2 {
+						return nil
+					}
+					return errors.New("non-nil error")
+				})
+				return count
+			},
+			want: 2,
+		},
+		{
+			name: "pathTracking",
+			walk: func(tree *KeyValue) any {
+				var paths [][]string
+				err := tree.Walk(func(path []string, node *KeyValue) error {
+					cp := make([]string, len(path))
+					copy(cp, path)
+					paths = append(paths, cp)
+					return nil
+				})
+				if err != nil {
+					return err
+				}
+				return paths
+			},
+			want: [][]string{
+				{"root"},
+				{"root", "a"},
+				{"root", "b"},
+				{"root", "b", "c"},
+			},
+		},
+	}
 
-		want := []string{"root", "a", "b", "c"}
-		if diff := cmp.Diff(want, visited); diff != "" {
-			t.Errorf("Walk() visited mismatch (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("pathTracking", func(t *testing.T) {
-		var paths [][]string
-		err := tree.Walk(func(path []string, node *KeyValue) error {
-			cp := make([]string, len(path))
-			copy(cp, path)
-			paths = append(paths, cp)
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("Walk(): %v", err)
-		}
-
-		want := [][]string{
-			{},
-			{"root"},
-			{"root"},
-			{"root", "b"},
-		}
-		if diff := cmp.Diff(want, paths); diff != "" {
-			t.Errorf("Walk() paths mismatch (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("earlyStop", func(t *testing.T) {
-		count := 0
-		_ = tree.Walk(func(path []string, node *KeyValue) error {
-			count++
-			if count < 2 {
-				return nil
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.walk(tree)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Walk() mismatch (-want +got):\n%s", diff)
 			}
-			return errors.New("")
 		})
-
-		if count != 2 {
-			t.Errorf("Walk() with early stop visited %d, want 2", count)
-		}
-	})
+	}
 }
 
 func TestKeyValue_Find(t *testing.T) {

@@ -303,7 +303,7 @@ func TestMap_Walk(t *testing.T) {
 				count := 0
 				m.Walk(func(path []string, key string, value any) error {
 					count++
-					return errors.New("")
+					return errors.New("non-nil error")
 				})
 				return count
 			},
