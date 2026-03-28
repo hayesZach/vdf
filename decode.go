@@ -34,9 +34,9 @@ func NewDecoder(r io.Reader, opts ...Option) *Decoder {
 }
 
 // Decode reads VDF from the input and stores the result in v.
-func (d *Decoder) Decode(v *KeyValue) error {
-	if v == nil {
-		return fmt.Errorf("v cannot be nil")
+func (d *Decoder) Decode(doc *Document) error {
+	if doc == nil {
+		return fmt.Errorf("doc cannot be nil")
 	}
 
 	data, err := io.ReadAll(d.r)
@@ -50,14 +50,14 @@ func (d *Decoder) Decode(v *KeyValue) error {
 		return err
 	}
 
-	*v = *result
+	*doc = *result
 	return nil
 }
 
-// Unmarshal parses VDF-encoded data and stores the result in v.
-func Unmarshal(data []byte, v *KeyValue, opts ...Option) error {
-	if v == nil {
-		return fmt.Errorf("v cannot be nil")
+// Unmarshal parses VDF-encoded data and stores the result in doc.
+func Unmarshal(data []byte, doc *Document, opts ...Option) error {
+	if doc == nil {
+		return fmt.Errorf("doc cannot be nil")
 	}
 
 	o := options{}
@@ -71,6 +71,6 @@ func Unmarshal(data []byte, v *KeyValue, opts ...Option) error {
 		return err
 	}
 
-	*v = *result
+	*doc = *result
 	return nil
 }

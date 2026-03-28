@@ -10,18 +10,18 @@ func TestUnmarshal_SimpleKeyValue(t *testing.T) {
 	"key" "value"
 }`)
 
-	var kv KeyValue
-	if err := Unmarshal(data, &kv); err != nil {
+	var doc Document
+	if err := Unmarshal(data, &doc); err != nil {
 		t.Fatalf("Unmarshal(): %v", err)
 	}
 
-	if kv.Key != "root" {
-		t.Errorf("got key %q, expected %q", kv.Key, "root")
+	if doc.Root.Key != "root" {
+		t.Errorf("got key %q, expected %q", doc.Root.Key, "root")
 	}
 
-	subValues, ok := kv.Value.([]*KeyValue)
+	subValues, ok := doc.Root.Value.([]*KeyValue)
 	if !ok {
-		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+		t.Fatalf("got Value of type %T, expected []*KeyValue", doc.Root.Value)
 	}
 
 	if len(subValues) != 1 {
@@ -44,14 +44,14 @@ func TestUnmarshal_WithOptions(t *testing.T) {
 	"key\t1" "value\n1"
 }`)
 
-	var kv KeyValue
-	if err := Unmarshal(data, &kv, UseEscapeSequences()); err != nil {
+	var doc Document
+	if err := Unmarshal(data, &doc, UseEscapeSequences()); err != nil {
 		t.Fatalf("Unmarshal(): %v", err)
 	}
 
-	subValues, ok := kv.Value.([]*KeyValue)
+	subValues, ok := doc.Root.Value.([]*KeyValue)
 	if !ok {
-		t.Fatalf("got Value of type %T, expected []*KeyValue", kv.Value)
+		t.Fatalf("got Value of type %T, expected []*KeyValue", doc.Root.Value)
 	}
 
 	if subValues[0].Key != "key\t1" {
@@ -69,8 +69,8 @@ func TestUnmarshal_Error(t *testing.T) {
 {
 }`)
 
-	var kv KeyValue
-	err := Unmarshal(data, &kv)
+	var doc Document
+	err := Unmarshal(data, &doc)
 	if err == nil {
 		t.Fatal("Unmarshal() succeeded, expected error")
 	}
