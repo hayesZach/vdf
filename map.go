@@ -79,26 +79,38 @@ func (m Map) Each(fn func(key string, value any) bool) {
 	}
 }
 
+// WalkFunc is the signature of the function called by Walk.
+//
+// The 'path' slice is a shared buffer representing the keys from the root down to the current node.
+// IMPORTANT: The underlying slice of 'path' is reused during traversal.
+// If you need to store the path, make a copy.
+// Return a non-nil error from WalkFunc to stop the traversal immediately.
 type WalkFunc func(path []string, key string, value any) error
 
 func (m Map) walk(path []string, fn WalkFunc) error {
 	for k, v := range m {
+		path = append(path, k)
 		if err := fn(path, k, v); err != nil {
 			return err
 		}
 
 		if sub, ok := v.(Map); ok {
-			if err := sub.walk(append(path, k), fn); err != nil {
+			if err := sub.walk(path, fn); err != nil {
 				return err
 			}
 		}
+		path = path[:len(path)-1]
 	}
 	return nil
 }
 
-// Walk visits every node in the tree depth-first.
-// The path slice contains the keys from the root down to (but not including) the current key.
-// Return an error from fn to stop the walk entirely.
+// Walk visits every node in the map tree depth-first.
+//
+// It uses a single, pre-allocated slice for the path to minimize memory allocations.
+// The WalkFunc must be careful about persisting the path slice, see WalkFunc documentation for more details.
+//
+// Return a non-nil error from WalkFunc to stop the traversal immediately.
 func (m Map) Walk(fn WalkFunc) error {
-	return m.walk(nil, fn)
+	path := make([]string, 0, 32)
+	return m.walk(path, fn)
 }

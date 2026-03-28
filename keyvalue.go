@@ -1,6 +1,8 @@
 package vdf
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type KeyValue struct {
 	Key   string
@@ -167,6 +169,8 @@ func (k *KeyValue) Each(fn func(child *KeyValue) bool) {
 }
 
 func (k *KeyValue) walk(path []string, fn func([]string, *KeyValue) error) error {
+	path = append(path, k.Key)
+
 	if err := fn(path, k); err != nil {
 		return err
 	}
@@ -176,20 +180,25 @@ func (k *KeyValue) walk(path []string, fn func([]string, *KeyValue) error) error
 		return nil
 	}
 
-	childPath := append(path, k.Key)
 	for _, child := range children {
-		if err := child.walk(childPath, fn); err != nil {
+		if err := child.walk(path, fn); err != nil {
 			return err
 		}
 	}
+
+	path = path[:len(path)-1]
 	return nil
 }
 
-// Walk visits every node in the tree depth-first (pre-order).
-// The path slice contains the keys from the root down to (but not including) the current node.
-// Return false from fn to stop the walk entirely.
+// Walk visits every node in the tree depth-first.
+//
+// The path slice contains the keys from the root down to the current node.
+// IMPORTANT: The underlying slice of 'path' is reused during traversal.
+// If you need to store the path, make a copy.
+// Return a non-nil error from fn to stop the traversal immediately.
 func (k *KeyValue) Walk(fn func(path []string, node *KeyValue) error) error {
-	return k.walk(nil, fn)
+	path := make([]string, 0, 32)
+	return k.walk(path, fn)
 }
 
 func (k *KeyValue) find(fn func(*KeyValue) bool) *KeyValue {
