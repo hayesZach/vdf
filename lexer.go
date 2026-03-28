@@ -186,7 +186,7 @@ func (l *lexer) next() (*Token, error) {
 		if err := l.skipComments(); err != nil {
 			if err == io.EOF {
 				line, col := calcLineAndColumn(l.input, l.pos, l.lineStarts)
-				return NewEOFToken(line, col), nil
+				return newEOFToken(line, col), nil
 			}
 			return nil, err
 		}
@@ -201,7 +201,7 @@ func (l *lexer) next() (*Token, error) {
 
 	r, _, err := l.read()
 	if err == io.EOF {
-		return NewEOFToken(line, col), nil
+		return newEOFToken(line, col), nil
 	}
 	if err != nil {
 		return nil, err
@@ -212,10 +212,10 @@ func (l *lexer) next() (*Token, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewStringToken(value, line, col), nil
+		return newStringToken(value, line, col), nil
 	}
 
-	return NewToken(r, line, col), nil
+	return newToken(r, line, col), nil
 }
 
 func (l *lexer) readString() (string, error) {
