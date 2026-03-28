@@ -86,7 +86,7 @@ func isIdentifier(ch rune) bool {
 	return !isControlCharacter(ch)
 }
 
-func NewToken(ch rune, line, col int) *Token {
+func newToken(ch rune, line, col int) *Token {
 	token := &Token{
 		Type:   ILLEGAL,
 		Lexeme: string(ch),
@@ -110,7 +110,7 @@ func NewToken(ch rune, line, col int) *Token {
 	return token
 }
 
-func NewStringToken(value string, line, col int) *Token {
+func newStringToken(value string, line, col int) *Token {
 	return &Token{
 		Type:   STRING,
 		Lexeme: value,
@@ -119,7 +119,7 @@ func NewStringToken(value string, line, col int) *Token {
 	}
 }
 
-func NewEOFToken(line, col int) *Token {
+func newEOFToken(line, col int) *Token {
 	return &Token{
 		Type:   EOF,
 		Lexeme: "",
