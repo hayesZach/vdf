@@ -9,6 +9,12 @@ type parser struct {
 	lexer *lexer
 }
 
+func newParser(data []byte, useEscapeSequences bool) *parser {
+	return &parser{
+		lexer: newLexer(data, useEscapeSequences),
+	}
+}
+
 func (p *parser) parse() (*Document, error) {
 	token, err := p.lexer.peek()
 	if err != nil {
