@@ -6,7 +6,6 @@ import (
 )
 
 type options struct {
-	ignoreWhitespace    bool
 	usesEscapeSequences bool
 }
 
@@ -44,7 +43,7 @@ func (d *Decoder) Decode(doc *Document) error {
 		return err
 	}
 
-	p := &parser{lexer: newLexer(data, d.opts.usesEscapeSequences)}
+	p := newParser(data, d.opts.usesEscapeSequences)
 	result, err := p.parse()
 	if err != nil {
 		return err
@@ -65,7 +64,7 @@ func Unmarshal(data []byte, doc *Document, opts ...Option) error {
 		opt(&o)
 	}
 
-	p := &parser{lexer: newLexer(data, o.usesEscapeSequences)}
+	p := newParser(data, o.usesEscapeSequences)
 	result, err := p.parse()
 	if err != nil {
 		return err
